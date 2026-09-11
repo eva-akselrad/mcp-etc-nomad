@@ -10,9 +10,16 @@ import {
 } from "../eos/addresses.js";
 import { buildCommand } from "../eos/command.js";
 import type { EosContext } from "../eos/context.js";
+import { buildGoToCueCommand } from "../eos/programming.js";
 import { cueFireFields, gateCueFire, gateLiveWrite, jsonResult, liveWriteFields, sendButton } from "./helpers.js";
 
 const cueNumber = z.union([z.number(), z.string()]);
+
+async function sendCliStep(ctx: EosContext, line: string): Promise<string> {
+  const cmd = buildCommand(line, "enter");
+  await ctx.client.send("/eos/newcmd", cmd.text);
+  return cmd.text;
+}
 
 export function registerPlaybackTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
@@ -39,58 +46,68 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
     "go_to_cue",
     {
       description:
-        "Go To Cue (GTC): select cue then /eos/key/go_to_cue. Default uses cue's own time; time=0 slams (Assert). Prefer over cue_fire for timed playback.",
+        "Go To Cue (GTC) via CLI /eos/newcmd (preferred): 'Go To Cue 5', 'Go To Cue 1/10', 'Go To Cue Out'. NOT /eos/cue/.../fire or /eos/key/go_0. Optional method=key uses /eos/key/go_to_cue.",
       inputSchema: z.object({
-        cue: cueNumber,
+        cue: cueNumber.optional(),
         cueList: z.number().int().positive().optional(),
-        part: z.number().int().positive().optional(),
+        out: z.boolean().optional().describe("Go To Cue Out (fade out current look)."),
         time: z
           .union([z.number(), z.string()])
           .optional()
-          .describe("Fade time override; 0 = slam (Assert). Omit to use cue's own time."),
-        out: z.string().optional().describe("Out-time override before GTC."),
+          .describe("Fade time override prepended via CLI; 0 = slam (Assert). Omit for cue's own time."),
         assert: z
           .number()
           .optional()
           .default(0)
-          .describe("Assert time (default 0). Used when time=0 for slam."),
+          .describe("Assert time when time=0 (default 0)."),
+        method: z.enum(["cli", "key"]).optional().default("cli"),
         ...cueFireFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ cue, cueList, part, time, out, assert, confirm, allow_live, override_rate_limit }) => {
+    async ({ cue, cueList, out, time, assert, method, confirm, allow_live, override_rate_limit }) => {
       const blocked = gateCueFire(ctx, { confirm, allow_live, override_rate_limit });
       if (blocked) return blocked;
 
       const steps: string[] = [];
+      const transport = method ?? "cli";
 
-      if (part !== undefined && cueList !== undefined) {
-        await ctx.client.send(cueSelect(cueList, cue), part);
-      } else {
-        await ctx.client.send(cueSelect(cueList), cue);
-      }
-      steps.push(`cue_select ${cueList ?? ""}/${cue}`);
-
-      if (out !== undefined) {
-        const outCmd = buildCommand(`Out ${out}`, "enter");
-        await ctx.client.send("/eos/newcmd", outCmd.text);
-        steps.push(outCmd.text);
-      }
-
-      if (time !== undefined) {
-        if (time === 0 || time === "0") {
-          await sendButton(ctx, keyPress("assert"));
-          steps.push("/eos/key/assert");
-          if (assert !== undefined && assert !== 0) {
-            const assertCmd = buildCommand(`Assert ${assert}`, "enter");
-            await ctx.client.send("/eos/newcmd", assertCmd.text);
-            steps.push(assertCmd.text);
+      if (transport === "cli") {
+        if (time !== undefined) {
+          if (time === 0 || time === "0") {
+            if (assert !== undefined && assert !== 0) {
+              steps.push(await sendCliStep(ctx, `Assert ${assert}`));
+            } else {
+              await sendButton(ctx, keyPress("assert"));
+              steps.push("/eos/key/assert");
+            }
+          } else {
+            steps.push(await sendCliStep(ctx, `Time ${time}`));
           }
-        } else {
-          const timeCmd = buildCommand(`Time ${time}`, "enter");
-          await ctx.client.send("/eos/newcmd", timeCmd.text);
-          steps.push(timeCmd.text);
         }
+
+        const line = buildGoToCueCommand({ cue, cueList, out });
+        steps.push(await sendCliStep(ctx, line));
+
+        return jsonResult({
+          ok: true,
+          action: "go_to_cue",
+          method: "cli",
+          path: "/eos/newcmd",
+          steps,
+          cueList,
+          cue,
+          out,
+          time,
+        });
+      }
+
+      // Key fallback: /eos/key/go_to_cue — not go_0
+      if (time !== undefined && (time === 0 || time === "0")) {
+        await sendButton(ctx, keyPress("assert"));
+        steps.push("/eos/key/assert");
+      } else if (time !== undefined) {
+        steps.push(await sendCliStep(ctx, `Time ${time}`));
       }
 
       const gtcAddress = keyPress("go_to_cue");
@@ -100,13 +117,13 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
       return jsonResult({
         ok: true,
         action: "go_to_cue",
+        method: "key",
         steps,
         cueList,
         cue,
-        part,
-        time,
         out,
-        assert,
+        time,
+        note: "CLI method preferred; key path does not enter cue digits — select cue first if needed.",
       });
     }
   );
@@ -115,7 +132,7 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
     "cue_fire",
     {
       description:
-        "Fire a specific cue immediately (slam/jump — no fade sequencing). Prefer go_to_cue for timed playback; cue_fire remains for instant recall.",
+        "Fire a specific cue immediately via /eos/cue/.../fire (slam/jump). Prefer go_to_cue for timed GTC playback.",
       inputSchema: z.object({
         cue: cueNumber,
         cueList: z.number().int().positive().optional(),
@@ -141,7 +158,7 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
   server.registerTool(
     "cue_go",
     {
-      description: "Press the console Go key (Go_0) — sequential advance on the main playback",
+      description: "Press [Go] via /eos/key/go_0 — sequential advance (NOT Go To Cue).",
       inputSchema: z.object({
         ...cueFireFields,
       }),
@@ -160,16 +177,24 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
   server.registerTool(
     "cue_hold",
     {
-      description: "Hold/Stop — halt a running fade and stay (/eos/key/stop). Does not go back.",
+      description:
+        "Stop/Hold via /eos/key/stop (while fading = hold; idle = back). List: /eos/cues/stop or /eos/cues/{list}/stop. Main list: stop_back_main_cuelist.",
       inputSchema: z.object({
         cueList: z.number().int().positive().optional(),
+        mainList: z.boolean().optional().describe("Use /eos/key/stop_back_main_cuelist"),
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ cueList, confirm, allow_live }) => {
+    async ({ cueList, mainList, confirm, allow_live }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
+
+      if (mainList) {
+        const address = keyPress("stop_back_main_cuelist");
+        await sendButton(ctx, address);
+        return jsonResult({ ok: true, action: "cue_hold", address, mainList: true });
+      }
 
       if (cueList === undefined) {
         await sendButton(ctx, "/eos/key/stop");
@@ -185,7 +210,8 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
   server.registerTool(
     "cue_back",
     {
-      description: "Go Back a cue via /eos/key/back (version-sensitive; use cue_hold to stop fades).",
+      description:
+        "Explicit Go Back via /eos/key/back (version-sensitive). Prefer cue_hold (/eos/key/stop) which holds while fading and backs when idle.",
       inputSchema: z.object({
         ...liveWriteFields,
       }),
@@ -202,10 +228,30 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
   );
 
   server.registerTool(
+    "cue_resume",
+    {
+      description: "Resume a stopped fade via /eos/key/resume.",
+      inputSchema: z.object({
+        edge: z.enum(["down", "up", "tap"]).optional(),
+        ...liveWriteFields,
+      }),
+      annotations: { destructiveHint: true },
+    },
+    async ({ edge, confirm, allow_live }) => {
+      const blocked = gateLiveWrite(ctx, { confirm, allow_live });
+      if (blocked) return blocked;
+
+      const address = keyPress("resume");
+      await sendButton(ctx, address, edge);
+      return jsonResult({ ok: true, action: "cue_resume", address, edge: edge ?? "tap" });
+    }
+  );
+
+  server.registerTool(
     "cue_stop",
     {
       description:
-        "Deprecated alias for cue_hold (stop fade, stay). Use cue_hold or cue_back explicitly.",
+        "Deprecated alias for cue_hold. Use cue_hold (stop/hold while fading) or cue_back (explicit back key) explicitly.",
       inputSchema: z.object({
         cueList: z.number().int().positive().optional(),
         ...liveWriteFields,

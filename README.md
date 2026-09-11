@@ -27,7 +27,7 @@ Live-write tools require `confirm=true` when `EOS_REQUIRE_CONFIRM=true` (default
 
 | Group | Tools |
 |-------|--------|
-| Playback | `go_to_cue`, `cue_select`, `cue_fire` (slam alias), `cue_go`, `cue_hold`, `cue_back`, `cue_stop` (deprecated→hold), `cue_list_go`, `get_active_cue`, `get_pending_cues` |
+| Playback | `go_to_cue` (CLI GTC preferred), `cue_select`, `cue_fire`, `cue_go`, `cue_hold`, `cue_back`, `cue_resume`, `cue_stop` (deprecated→hold), `cue_list_go`, `get_active_cue`, `get_pending_cues` |
 | GM / BO | `grandmaster_set_level` (0–1), `blackout` (BO key — never Chan Thru Out) |
 | Channel check | `highlight`, `rem_dim`, `timing_disable`, `sneak`, `home` |
 | Park | `park_channel`, `unpark_channel`, `get_parked` |
@@ -53,7 +53,7 @@ Programming writes use the same `confirm` / `allow_live` gates as playback. Dest
 
 | Group | Tools |
 |-------|--------|
-| Record / update | `record_cue`, `update_cue`, `make_manual`, `set_cue_timing`, `record_group`, `record_preset`, `record_palette`, `show_save` |
+| Record / update | `record_cue`, `update_cue`, `make_manual`, `set_cue_timing`, `record_group`, `record_preset`, `record_palette`, `show_save` (Shift+Update quick-save) |
 | Copy / move / delete | `copy_target`, `move_target`, `delete_target` (+ `confirm_delete`) |
 | OSC set | `label_target`, `group_set_channels` (`/eos/set/...`; Thru as `>`) |
 | Patch | `patch_channel`, `patch_copy_to`, `patch_move`, `unpatch_channel` |

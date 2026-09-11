@@ -94,6 +94,30 @@ export function paramSet(param: string): string {
   return `/eos/param/${param}`;
 }
 
+export function atRemdim(): string {
+  return "/eos/at/remdim";
+}
+
+export function channelRemdim(channel: number): string {
+  return `/eos/chan/${channel}/remdim`;
+}
+
+export function groupRemdim(group: number): string {
+  return `/eos/group/${group}/remdim`;
+}
+
+export function atHome(): string {
+  return "/eos/at/home";
+}
+
+export function channelHome(channel: number): string {
+  return `/eos/chan/${channel}/home`;
+}
+
+export function groupHome(group: number): string {
+  return `/eos/group/${group}/home`;
+}
+
 export function getPatchCount(): string {
   return "/eos/get/patch/count";
 }

@@ -449,23 +449,37 @@ export function buildSetCueTimingCommand(options: {
   return parts.join(" ");
 }
 
-/** Save show to path via CLI (Browser path syntax). */
-export function buildShowSaveCommand(path: string): string {
-  return `Save ${JSON.stringify(path)}`;
+/** Go To Cue via CLI (preferred over key sequence). */
+export function buildGoToCueCommand(options: {
+  cue?: number | string;
+  cueList?: number;
+  out?: boolean;
+}): string {
+  if (options.out) {
+    return "Go To Cue Out";
+  }
+  if (options.cue === undefined) {
+    throw new Error("Provide cue or out=true for Go To Cue.");
+  }
+  const cueSeg = targetNumber(options.cue, "cue");
+  if (options.cueList !== undefined) {
+    return `Go To Cue ${options.cueList}/${cueSeg}`;
+  }
+  return `Go To Cue ${cueSeg}`;
 }
 
 export function buildParkCommand(options: { channel: number; thru?: number }): string {
   if (options.thru !== undefined) {
-    return `Park Channel ${options.channel} Thru ${options.thru}`;
+    return `Chan ${options.channel} Thru ${options.thru} Park`;
   }
-  return `Park Channel ${options.channel}`;
+  return `Chan ${options.channel} Park`;
 }
 
 export function buildUnparkCommand(options: { channel: number; thru?: number }): string {
   if (options.thru !== undefined) {
-    return `Unpark Channel ${options.channel} Thru ${options.thru}`;
+    return `Chan ${options.channel} Thru ${options.thru} Unpark`;
   }
-  return `Unpark Channel ${options.channel}`;
+  return `Chan ${options.channel} Unpark`;
 }
 
 /**
