@@ -43,54 +43,65 @@ Playback checklist:
 - Macros: macro_fire
 `;
 
-const PROGRAMMER_INSTRUCTIONS = `You are programming an ETC Eos Family console (ETCnomad or hardware) via MCP.
+const PROGRAMMER_INSTRUCTIONS = `You are programming an ETC Eos Family console via MCP (Eos OSC domain rules).
 
-Workflow:
-1. Prefer blind mode for programming — read get_console_state; live writes need allow_live.
-2. Use typed programming tools before raw eos_command:
-   - cue_record, cue_update — record/update cues from the programmer
-   - programming_copy, programming_move, programming_delete — bulk cue/effect operations
-   - group_record, target_label — groups and labels
-3. sync_show_targets refreshes eos://show/groups and eos://show/cues/{list} caches.
-4. query_groups / query_cuelists / query_cues read the cache without hitting the desk.
+## Transport
+1. Programming ≈ /eos/cmd or /eos/newcmd — there is NO OSC Record verb. Typed tools use eos_new_command (/eos/newcmd) so leftover CLI does not corrupt the next action. Prefer eos_new_command for multi-step flows.
+2. Always terminate with # or Enter. Unterminated text stays on the command line.
+3. String RX must be ON (Setup → Show Control → OSC) or commands silently fail.
+4. /eos/event and /eos/newevent are background/event semantics — NOT interactive programming.
+5. Commands run as the OSC user. Blind/Live and selection are per that user. Patch wants Blind; live Record changes the running look.
 
-Record patterns:
-- Select channels/levels → cue_record cue=5 cueList=1
-- Or: Cue 5 Enter → Record Enter (via eos_command)
-- Update existing: cue_update cue=5
-- Block/merge: pass block=true or merge=true on record/update
+## Record / Update
+6. Record needs look + target:
+   - Two-step: Cue 5 Enter → Record Enter (style=two_step)
+   - One-shot: Record Cue 5 Enter (style=one_shot, default)
+7. Record vs Record Only (mode=record_only) — wrong choice overwrites or leaves empty targets.
+8. Update only commits manual/red values. After Go, Make Manual or re-select channels — else Update is useless.
+9. Pass scope on cue_update: all | cue_only | track. Live vs Blind Update dialogs differ on desk.
+10. Parts: Cue 1 Part 2 Enter then Record/Update — never assume multipart from bare cue number.
 
-Copy / move / delete:
-- programming_copy sourceType=cue sourceFrom=1 sourceThru=5 destType=cue dest=10
-- programming_move sourceType=cue source=5 destType=cue dest=10
-- programming_delete requires confirm_delete=true (destructive) plus confirm=true
+## Copy / Move / Delete
+11. Cue copy: Copy Cue 1 Thru 5 Cue 10 Enter (programming_copy). Omit cueList on active list.
+12. Channel Copy To ≠ patch copy. Live levels vs patch 111 Copy To 116 (patch_copy_to). {Plus Show}/{Only Show} softkeys change scope.
+13. Patch MOVE = double Copy To: 116 Copy To Copy To 120 (patch_move). Single Copy To is NOT move.
+14. Move Effect 1 At Effect 2 (programming_move sourceType=effect) — do not reuse cue copy templates.
+15. Delete: confirm=true AND confirm_delete=true. Desk may need second Enter. Prefer Blind. Sneak/Home/Out are NOT Delete.
+16. After record/copy/delete, refresh_cache runs sync_show_targets — do not trust stale eos://show/* resources.
 
-Groups:
-- group_record group=1 channelFrom=1 channelThru=20 label="Wash"
-- Or select channels → Group N Record
+## Tools
+- cue_record, cue_update, programming_copy, programming_move, programming_delete
+- patch_copy_to, patch_move, unpatch_channel (unpatch ≠ delete)
+- group_record, target_label (use_osc=true for /eos/set/.../label on group/cue)
+- sync_show_targets, query_groups / query_cuelists / query_cues
 
-Always terminate CLI with Enter (# also works). String RX must be enabled in Nomad OSC setup.
+Pin EOS_VERSION in env for syntax hints. eos_command remains the parity backstop.
 `;
 
-const PATCH_INSTRUCTIONS = `You are patching fixtures on an ETC Eos Family console via MCP.
+const PATCH_INSTRUCTIONS = `You are patching fixtures on an ETC Eos Family console via MCP (Eos OSC domain rules).
 
-Rules:
-- Use patch_channel for simple patch CLI; complex patch/unpatch/RDM may need eos_command.
-- Nomad offline: output limits apply (dongle tier). Document universe and address conflicts.
-- Patch syntax examples:
-  - Patch 101 Enter
-  - Patch 1 Thru 10 Type "Source Four" Enter
-  - Patch 101 Address 1 Universe 1 Enter
-- Unpatch: Delete Channel 101 Enter (programming_delete target via CLI or eos_command)
-- After patch changes, run sync_show_targets if you need updated group/cue context.
+## Transport
+- Patch programming uses /eos/newcmd (typed tools) or /eos/cmd — String RX required or silent failure.
+- Commands run as OSC user; prefer Blind for patch work.
 
-Universes: Eos supports multiple universes; specify Universe N when addressing.
-Profiles: fixture type strings must match the console library (use browser or eos_command List Type).
+## Patch rules
+17. Enter Patch display first on Live CLI (enter_patch_display=true) or syntax may misread.
+18. Pin EOS_VERSION — patch syntax is version-sensitive (check tool responses for eosVersion).
+19. Prefer explicit Address and Universe in patch_channel templates.
+20. Unpatch (unpatch_channel) ≠ Delete channel data (programming_delete).
+21. Prefer fixtureTypeNumber over fixtureType names when automating (spaces in library names).
 
-Safety:
-- Patching is destructive to show data — use confirm=true on writes.
-- In live mode, patching may affect output — pass allow_live=true when required.
-- Prefer blind/offline Nomad for bulk patch work.
+## Examples
+- patch_channel channel=101 address=1 universe=1 fixtureTypeNumber=42 enter_patch_display=true
+- patch_copy_to sourceChannel=111 destChannel=116 (patch only, not live Copy To)
+- patch_move sourceChannel=116 destChannel=120 (double Copy To)
+- unpatch_channel channel=101 confirm=true confirm_delete=true
+
+## After patch
+- Run sync_show_targets before trusting eos://show/groups or cue caches.
+- Labels: target_label with use_osc=true sends /eos/set/group|cue/.../label; Record stays CLI.
+
+Nomad offline: dongle tier caps outputs. Multi-console: OSC to session Host only.
 `;
 
 export function registerPrompts(server: McpServer, _ctx: EosContext): void {
@@ -114,7 +125,7 @@ export function registerPrompts(server: McpServer, _ctx: EosContext): void {
     "eos-programmer",
     {
       title: "Eos programming patterns",
-      description: "Record, update, block, copy, move, delete, groups, and sync resources",
+      description: "OSC/cmd transport, record/update/copy/move/delete, sync, Eos domain constraints",
     },
     () => ({
       messages: [
@@ -130,7 +141,7 @@ export function registerPrompts(server: McpServer, _ctx: EosContext): void {
     "eos-patch",
     {
       title: "Eos patch syntax",
-      description: "Patch channels, universes, fixture types, Nomad output limits",
+      description: "Patch display, Copy To vs move, unpatch, EOS_VERSION, Address/Universe",
     },
     () => ({
       messages: [

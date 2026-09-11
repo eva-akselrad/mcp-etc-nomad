@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import {
   buildCopyCommand,
+  buildCueMoveCommand,
   buildDeleteCommand,
+  buildEffectMoveCommand,
   buildGroupFromChannelsCommand,
-  buildMoveCommand,
+  buildPatchCopyCommand,
+  buildPatchMoveCommand,
   buildRecordCommand,
   buildUpdateCommand,
+  asProgrammingSteps,
 } from "../src/eos/programming.js";
 import { EosClient } from "../src/eos/client.js";
 import { EosListener } from "../src/eos/listener.js";
@@ -19,46 +23,71 @@ import {
 } from "./harness.js";
 import { MockOscPeer } from "./mock-osc-peer.js";
 
-describe("programming command builders", () => {
-  it("buildRecordCommand formats cue record with list and label", () => {
+describe("programming command builders (Eos OSC domain)", () => {
+  it("one_shot record: Record Cue before target when style=one_shot", () => {
     assert.equal(
-      buildRecordCommand({ target: "cue", number: 5, cueList: 1, label: "Intro" }),
-      'Cue 1/5 Record Label "Intro"'
+      buildRecordCommand({ target: "cue", number: 5, cueList: 1, label: "Intro", style: "one_shot" }),
+      'Record Cue 1/5 Label Cue 1/5 "Intro"'
     );
   });
 
-  it("buildUpdateCommand formats cue update", () => {
+  it("two_step record: Cue then Record as separate steps", () => {
+    const built = buildRecordCommand({
+      target: "cue",
+      number: 5,
+      style: "two_step",
+    });
+    assert.deepEqual(asProgrammingSteps(built).steps, ["Cue 5", "Record"]);
+  });
+
+  it("record_only mode uses Record Only verb", () => {
     assert.equal(
-      buildUpdateCommand({ target: "cue", number: 1.5, cueList: 2, block: true }),
-      "Cue 2/1.5 Update Block"
+      buildRecordCommand({ target: "cue", number: 5, mode: "record_only", style: "one_shot" }),
+      "Record Only Cue 5"
     );
   });
 
-  it("buildCopyCommand formats cue range copy", () => {
+  it("update with part uses Part N syntax", () => {
+    assert.equal(
+      buildUpdateCommand({
+        target: "cue",
+        number: 1,
+        part: 2,
+        scope: "track",
+        style: "one_shot",
+      }),
+      "Cue 1 Part 2 Update Track"
+    );
+  });
+
+  it("cue copy on active list: Copy Cue 1 Thru 5 Cue 10", () => {
     assert.equal(
       buildCopyCommand({
         sourceType: "cue",
         sourceFrom: 1,
         sourceThru: 5,
-        sourceCueList: 1,
         destType: "cue",
         dest: 10,
-        destCueList: 1,
       }),
-      "Copy Cue 1/1 Thru Cue 1/5 Cue 1/10"
+      "Copy Cue 1 Thru Cue 5 Cue 10"
     );
   });
 
-  it("buildMoveCommand formats effect move", () => {
+  it("buildEffectMoveCommand is separate from cue templates", () => {
+    assert.equal(buildEffectMoveCommand({ source: 1, dest: 2 }), "Move Effect 1 At Effect 2");
+  });
+
+  it("buildCueMoveCommand for cues", () => {
     assert.equal(
-      buildMoveCommand({
-        sourceType: "effect",
-        source: 1,
-        destType: "effect",
-        dest: 2,
-      }),
-      "Move Effect 1 At Effect 2"
+      buildCueMoveCommand({ source: 5, dest: 10 }),
+      "Move Cue 5 At Cue 10"
     );
+  });
+
+  it("patch move uses double Copy To", () => {
+    assert.equal(buildPatchMoveCommand({ sourceChannel: 116, destChannel: 120 }), "116 Copy To Copy To 120");
+    assert.equal(buildPatchCopyCommand({ sourceChannel: 111, destChannel: 116 }), "111 Copy To 116");
+    assert.notEqual(buildPatchCopyCommand({ sourceChannel: 111, destChannel: 116 }), buildPatchMoveCommand({ sourceChannel: 111, destChannel: 116 }));
   });
 
   it("buildDeleteCommand formats delete with thru", () => {
@@ -67,9 +96,8 @@ describe("programming command builders", () => {
         target: "cue",
         from: 1,
         thru: 5,
-        cueList: 1,
       }),
-      "Delete Cue 1/1 Thru Cue 1/5"
+      "Delete Cue 1 Thru Cue 5"
     );
   });
 
@@ -81,23 +109,37 @@ describe("programming command builders", () => {
         group: 1,
         label: "Wash",
       }),
-      'Channel 1 Thru 10 Group 1 Label Group 1 "Wash"'
+      'Channel 1 Thru 10 Group 1 Record Label Group 1 "Wash"'
     );
   });
 });
 
 describe("programming tools via recording client", () => {
-  it("cue_record sends CLI via /eos/cmd with Enter terminator", async () => {
-    const { server, client } = createHarness({ consoleMode: "blind" });
+  it("cue_record sends CLI via /eos/newcmd with Enter terminator", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind", config: { requireConfirm: false } });
 
     const result = await invokeTool(server, "cue_record", {
       cue: 5,
       cueList: 1,
-      confirm: true,
+      refresh_cache: false,
     });
     assert.equal(isToolError(result), false);
-    assert.equal(client.sent.at(-1)?.address, "/eos/cmd");
-    assert.match(String(client.sent.at(-1)?.args[0]), /Cue 1\/5 Record Enter$/);
+    assert.equal(client.sent.at(-1)?.address, "/eos/newcmd");
+    assert.match(String(client.sent.at(-1)?.args[0]), /Record Cue 1\/5 Enter$/);
+  });
+
+  it("two_step cue_record sends multiple newcmd lines", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind", config: { requireConfirm: false } });
+
+    await invokeTool(server, "cue_record", {
+      cue: 5,
+      style: "two_step",
+      refresh_cache: false,
+    });
+    const paths = client.sent.map((m) => m.address);
+    assert.equal(paths.filter((p) => p === "/eos/newcmd").length, 2);
+    assert.match(String(client.sent[0]?.args[0]), /Cue 5 Enter$/);
+    assert.match(String(client.sent[1]?.args[0]), /Record Enter$/);
   });
 
   it("programming_delete requires confirm_delete when EOS_REQUIRE_CONFIRM=true", async () => {
@@ -108,13 +150,14 @@ describe("programming tools via recording client", () => {
       from: 5,
       cueList: 1,
       confirm: true,
+      refresh_cache: false,
     });
     assert.equal(isToolError(blocked), true);
     assert.match(parseToolJson<{ error: string }>(blocked).error, /confirm_delete=true/);
     assert.equal(client.sent.length, 0);
   });
 
-  it("programming_delete sends delete CLI with confirm_delete", async () => {
+  it("programming_delete sends delete CLI with confirm_delete via newcmd", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     const ok = await invokeTool(server, "programming_delete", {
@@ -123,8 +166,10 @@ describe("programming tools via recording client", () => {
       cueList: 1,
       confirm: true,
       confirm_delete: true,
+      refresh_cache: false,
     });
     assert.equal(isToolError(ok), false);
+    assert.equal(client.sent.at(-1)?.address, "/eos/newcmd");
     assert.match(String(client.sent.at(-1)?.args[0]), /Delete Cue 1\/5 Enter$/);
   });
 
@@ -134,6 +179,7 @@ describe("programming tools via recording client", () => {
     const blocked = await invokeTool(server, "cue_record", {
       cue: 1,
       confirm: true,
+      refresh_cache: false,
     });
     assert.equal(isToolError(blocked), true);
     assert.match(parseToolJson<{ error: string }>(blocked).error, /allow_live=true/);
@@ -144,9 +190,21 @@ describe("programming tools via recording client", () => {
       cue: 1,
       confirm: true,
       allow_live: true,
+      refresh_cache: false,
     });
     assert.equal(isToolError(ok), false);
-    assert.equal(client.sent.at(-1)?.address, "/eos/cmd");
+    assert.equal(client.sent.at(-1)?.address, "/eos/newcmd");
+  });
+
+  it("patch_move sends double Copy To via newcmd", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind", config: { requireConfirm: false } });
+
+    await invokeTool(server, "patch_move", {
+      sourceChannel: 116,
+      destChannel: 120,
+      refresh_cache: false,
+    });
+    assert.match(String(client.sent.at(-1)?.args[0]), /116 Copy To Copy To 120 Enter$/);
   });
 });
 

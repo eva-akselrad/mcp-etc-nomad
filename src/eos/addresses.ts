@@ -293,3 +293,12 @@ export function getCueIndex(cueList: number, index: number): string {
 export function getCue(cueList: number, cue: number | string): string {
   return `/eos/get/cue/${cueList}/${targetNumber(cue, "cue")}/0`;
 }
+
+/** OSC set label for some targets (Record itself stays CLI). */
+export function setGroupLabel(group: number): string {
+  return `/eos/set/group/${group}/label`;
+}
+
+export function setCueLabel(cueList: number, cue: number | string): string {
+  return `/eos/set/cue/${cueList}/${targetNumber(cue, "cue")}/label`;
+}

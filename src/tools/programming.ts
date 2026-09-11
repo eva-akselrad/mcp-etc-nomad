@@ -1,17 +1,26 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
+import { setCueLabel, setGroupLabel } from "../eos/addresses.js";
 import { buildCommand } from "../eos/command.js";
 import type { EosContext } from "../eos/context.js";
 import {
+  asProgrammingSteps,
   buildCopyCommand,
+  buildCueMoveCommand,
   buildDeleteCommand,
+  buildEffectMoveCommand,
   buildGroupFromChannelsCommand,
   buildLabelCommand,
-  buildMoveCommand,
   buildPatchCommand,
+  buildPatchCopyCommand,
+  buildPatchMoveCommand,
   buildRecordCommand,
+  buildUnpatchCommand,
   buildUpdateCommand,
   type ProgrammingTarget,
+  type RecordMode,
+  type RecordStyle,
+  type UpdateScope,
 } from "../eos/programming.js";
 import { syncShowTargets } from "../eos/sync.js";
 import { gateDestructiveWrite, gateLiveWrite, jsonResult, liveWriteFields } from "./helpers.js";
@@ -37,20 +46,81 @@ const destructiveFields = {
   confirm_delete: z
     .boolean()
     .optional()
-    .describe("Required for delete operations when EOS_REQUIRE_CONFIRM=true (destructive)."),
+    .describe(
+      "Required for delete/unpatch when EOS_REQUIRE_CONFIRM=true (destructive double-confirm)."
+    ),
 };
 
-async function sendProgrammingCommand(
+const programmingTransportFields = {
+  style: z
+    .enum(["one_shot", "two_step"])
+    .optional()
+    .describe(
+      "one_shot: single CLI line. two_step: Cue N then Record/Update (prefer eos_new_command per step)."
+    ),
+  refresh_cache: z
+    .boolean()
+    .optional()
+    .describe("Re-run sync_show_targets after success (default true). Do not trust stale cache."),
+};
+
+type SendOptions = {
+  confirm?: boolean;
+  allow_live?: boolean;
+  refresh_cache?: boolean;
+  cueList?: number;
+};
+
+/** Programming uses /eos/newcmd so leftover CLI text does not corrupt the next action. */
+async function sendProgrammingSteps(
   ctx: EosContext,
-  text: string,
-  options: { confirm?: boolean; allow_live?: boolean }
+  built: string | ReturnType<typeof buildRecordCommand>,
+  options: SendOptions
 ): Promise<ReturnType<typeof jsonResult>> {
   const blocked = gateLiveWrite(ctx, options);
   if (blocked) return blocked;
 
-  const built = buildCommand(text, "enter");
-  await ctx.client.send("/eos/cmd", built.text);
-  return jsonResult({ ok: true, action: "eos_command", sent: built.text, path: "/eos/cmd" });
+  const { steps, style, notes } = asProgrammingSteps(built);
+  const sent: string[] = [];
+
+  for (const step of steps) {
+    const cmd = buildCommand(step, "enter");
+    await ctx.client.send("/eos/newcmd", cmd.text);
+    sent.push(cmd.text);
+  }
+
+  let refresh: Awaited<ReturnType<typeof syncShowTargets>> | undefined;
+  if (options.refresh_cache !== false) {
+    try {
+      refresh = await syncShowTargets(ctx.client, ctx.listener, {
+        groups: true,
+        cueLists: true,
+        cues: options.cueList !== undefined ? [options.cueList] : undefined,
+        subscribe: false,
+        timeoutMs: 5000,
+      });
+    } catch {
+      refresh = undefined;
+    }
+  }
+
+  return jsonResult({
+    ok: true,
+    action: "programming",
+    path: "/eos/newcmd",
+    style,
+    sent,
+    notes: [
+      ...(notes ?? []),
+      "Programming uses /eos/newcmd (clears line). String RX must be enabled or cmd silently fails.",
+      "Commands run as OSC user — Blind/Live and selection are per that user.",
+      refresh
+        ? "Cache refreshed via sync_show_targets."
+        : "Cache refresh skipped or failed — call sync_show_targets before trusting resources.",
+    ],
+    refresh,
+    eosVersion: ctx.config.eosVersion,
+  });
 }
 
 export function registerProgrammingTools(server: McpServer, ctx: EosContext): void {
@@ -58,15 +128,25 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
     "cue_record",
     {
       description:
-        "Record the current programmer selection into a cue via command line. Prefer blind mode for programming.",
+        "Record programmer look into a cue via CLI (/eos/newcmd). No OSC Record verb. Prefer Blind; live Record changes the running look.",
       inputSchema: z.object({
-        cue: z.union([z.number(), z.string()]).describe("Cue number (supports point cues like 1.5)"),
-        cueList: z.number().int().positive().optional().describe("Cue list (default: active list)"),
-        part: z.number().int().nonnegative().optional(),
+        cue: z.union([z.number(), z.string()]).describe("Cue number (point cues OK). Omit part unless recording a part."),
+        cueList: z.number().int().positive().optional(),
+        part: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Multipart: Cue N Part P — do not assume part from bare cue number."),
         label: z.string().optional(),
         block: z.boolean().optional(),
         merge: z.boolean().optional(),
-        time: z.string().optional().describe('Optional timing clause, e.g. "Time 3"'),
+        time: z.string().optional(),
+        mode: z
+          .enum(["record", "record_only"])
+          .optional()
+          .describe("Record vs Record Only — wrong choice overwrites or leaves empty targets."),
+        ...programmingTransportFields,
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
@@ -81,22 +161,35 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         block: args.block,
         merge: args.merge,
         time: args.time,
+        mode: args.mode as RecordMode | undefined,
+        style: args.style as RecordStyle | undefined,
       });
-      return sendProgrammingCommand(ctx, text, args);
+      return sendProgrammingSteps(ctx, text, {
+        confirm: args.confirm,
+        allow_live: args.allow_live,
+        refresh_cache: args.refresh_cache,
+        cueList: args.cueList,
+      });
     }
   );
 
   server.registerTool(
     "cue_update",
     {
-      description: "Update an existing cue with the current programmer selection.",
+      description:
+        "Update cue from manual/red programmer values. After Go, Make Manual first or Update is useless. Prefer explicit scope.",
       inputSchema: z.object({
         cue: z.union([z.number(), z.string()]).optional(),
         cueList: z.number().int().positive().optional(),
-        part: z.number().int().nonnegative().optional(),
+        part: z.number().int().positive().optional(),
         block: z.boolean().optional(),
         merge: z.boolean().optional(),
         time: z.string().optional(),
+        scope: z
+          .enum(["all", "cue_only", "track"])
+          .optional()
+          .describe("Update scope: All / Cue Only / Track (Live vs Blind dialogs differ on desk)."),
+        ...programmingTransportFields,
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
@@ -110,8 +203,15 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         block: args.block,
         merge: args.merge,
         time: args.time,
+        scope: args.scope as UpdateScope | undefined,
+        style: args.style as RecordStyle | undefined,
       });
-      return sendProgrammingCommand(ctx, text, args);
+      return sendProgrammingSteps(ctx, text, {
+        confirm: args.confirm,
+        allow_live: args.allow_live,
+        refresh_cache: args.refresh_cache,
+        cueList: args.cueList,
+      });
     }
   );
 
@@ -119,7 +219,7 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
     "programming_copy",
     {
       description:
-        'Copy show targets via CLI, e.g. "Copy Cue 1 Thru 5 Cue 10" or copy effects/groups.',
+        'Cue copy: "Copy Cue 1 Thru 5 Cue 10". Not channel Copy To or patch copy — use patch_copy_to for patch.',
       inputSchema: z.object({
         sourceType: programmingTargetSchema,
         sourceFrom: z.union([z.number(), z.string()]),
@@ -129,6 +229,7 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         dest: z.union([z.number(), z.string()]),
         destCueList: z.number().int().positive().optional(),
         time: z.string().optional(),
+        ...programmingTransportFields,
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
@@ -144,37 +245,118 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         destCueList: args.destCueList,
         time: args.time,
       });
-      return sendProgrammingCommand(ctx, text, args);
+      return sendProgrammingSteps(ctx, text, {
+        confirm: args.confirm,
+        allow_live: args.allow_live,
+        refresh_cache: args.refresh_cache,
+        cueList: args.destCueList ?? args.sourceCueList,
+      });
     }
   );
 
   server.registerTool(
     "programming_move",
     {
-      description: 'Move show targets via CLI, e.g. "Move Cue 5 At Cue 10".',
+      description:
+        'Move cues or effects only. Cues: "Move Cue 5 At Cue 10". Effects: "Move Effect 1 At Effect 2". Patch move uses patch_move (double Copy To).',
       inputSchema: z.object({
-        sourceType: programmingTargetSchema,
+        sourceType: z.enum(["cue", "effect"]),
         source: z.union([z.number(), z.string()]),
         sourceCueList: z.number().int().positive().optional(),
-        destType: programmingTargetSchema,
+        destType: z.enum(["cue", "effect"]),
         dest: z.union([z.number(), z.string()]),
         destCueList: z.number().int().positive().optional(),
         time: z.string().optional(),
+        ...programmingTransportFields,
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
     async (args) => {
-      const text = buildMoveCommand({
-        sourceType: args.sourceType as ProgrammingTarget,
-        source: args.source,
-        sourceCueList: args.sourceCueList,
-        destType: args.destType as ProgrammingTarget,
-        dest: args.dest,
-        destCueList: args.destCueList,
-        time: args.time,
+      let text: string;
+      if (args.sourceType === "effect" && args.destType === "effect") {
+        text = buildEffectMoveCommand({ source: args.source, dest: args.dest });
+      } else if (args.sourceType === "cue" && args.destType === "cue") {
+        text = buildCueMoveCommand({
+          source: args.source,
+          dest: args.dest,
+          sourceCueList: args.sourceCueList,
+          destCueList: args.destCueList,
+          time: args.time,
+        });
+      } else {
+        return jsonResult(
+          {
+            ok: false,
+            error: "Cross-type move not supported. Use cue+cue or effect+effect.",
+          },
+          true
+        );
+      }
+      return sendProgrammingSteps(ctx, text, {
+        confirm: args.confirm,
+        allow_live: args.allow_live,
+        refresh_cache: args.refresh_cache,
+        cueList: args.destCueList ?? args.sourceCueList,
       });
-      return sendProgrammingCommand(ctx, text, args);
+    }
+  );
+
+  server.registerTool(
+    "patch_copy_to",
+    {
+      description:
+        "Patch-only copy: \"111 Copy To 116\". Not live channel Copy To. {Plus Show}/{Only Show} softkeys change scope on desk.",
+      inputSchema: z.object({
+        sourceChannel: z.number().int().positive(),
+        destChannel: z.number().int().positive(),
+        enter_patch_display: z
+          .boolean()
+          .optional()
+          .describe("Send Patch Enter first — required on Live CLI before patch syntax."),
+        ...programmingTransportFields,
+        ...liveWriteFields,
+      }),
+      annotations: { destructiveHint: true },
+    },
+    async (args) => {
+      const steps = asProgrammingSteps(
+        args.enter_patch_display
+          ? { style: "two_step", steps: ["Patch", buildPatchCopyCommand(args)] }
+          : buildPatchCopyCommand(args)
+      );
+      return sendProgrammingSteps(ctx, steps, {
+        confirm: args.confirm,
+        allow_live: args.allow_live,
+        refresh_cache: args.refresh_cache,
+      });
+    }
+  );
+
+  server.registerTool(
+    "patch_move",
+    {
+      description:
+        'Patch MOVE = double Copy To: "116 Copy To Copy To 120". Single Copy To is copy, not move.',
+      inputSchema: z.object({
+        sourceChannel: z.number().int().positive(),
+        destChannel: z.number().int().positive(),
+        enter_patch_display: z.boolean().optional(),
+        ...programmingTransportFields,
+        ...liveWriteFields,
+      }),
+      annotations: { destructiveHint: true },
+    },
+    async (args) => {
+      const line = buildPatchMoveCommand(args);
+      const built = args.enter_patch_display
+        ? { style: "two_step" as const, steps: ["Patch", line] }
+        : line;
+      return sendProgrammingSteps(ctx, built, {
+        confirm: args.confirm,
+        allow_live: args.allow_live,
+        refresh_cache: args.refresh_cache,
+      });
     }
   );
 
@@ -182,13 +364,14 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
     "programming_delete",
     {
       description:
-        "Delete show targets via CLI (destructive — requires confirm_delete when EOS_REQUIRE_CONFIRM=true).",
+        "Delete show targets via CLI. Destructive: confirm + confirm_delete. Desk may prompt second Enter. Sneak/Home/Out are NOT Delete. Prefer Blind.",
       inputSchema: z.object({
         target: programmingTargetSchema,
         from: z.union([z.number(), z.string()]),
         thru: z.union([z.number(), z.string()]).optional(),
         cueList: z.number().int().positive().optional(),
-        part: z.number().int().nonnegative().optional(),
+        part: z.number().int().positive().optional(),
+        ...programmingTransportFields,
         ...liveWriteFields,
         ...destructiveFields,
       }),
@@ -198,6 +381,7 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
       const blocked = gateDestructiveWrite(ctx, {
         confirm: args.confirm,
         confirm_delete: args.confirm_delete,
+        allow_live: args.allow_live,
       });
       if (blocked) return blocked;
 
@@ -208,20 +392,61 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         cueList: args.cueList,
         part: args.part,
       });
-      return sendProgrammingCommand(ctx, text, args);
+      return sendProgrammingSteps(ctx, text, {
+        confirm: args.confirm,
+        allow_live: args.allow_live,
+        refresh_cache: args.refresh_cache,
+        cueList: args.cueList,
+      });
+    }
+  );
+
+  server.registerTool(
+    "unpatch_channel",
+    {
+      description:
+        "Unpatch removes patch assignment — not Delete channel data. Destructive: confirm + confirm_delete.",
+      inputSchema: z.object({
+        channel: z.number().int().positive(),
+        thru: z.number().int().positive().optional(),
+        enter_patch_display: z.boolean().optional(),
+        ...programmingTransportFields,
+        ...liveWriteFields,
+        ...destructiveFields,
+      }),
+      annotations: { destructiveHint: true },
+    },
+    async (args) => {
+      const blocked = gateDestructiveWrite(ctx, {
+        confirm: args.confirm,
+        confirm_delete: args.confirm_delete,
+        allow_live: args.allow_live,
+      });
+      if (blocked) return blocked;
+
+      const line = buildUnpatchCommand({ channel: args.channel, thru: args.thru });
+      const built = args.enter_patch_display
+        ? { style: "two_step" as const, steps: ["Patch", line] }
+        : line;
+      return sendProgrammingSteps(ctx, built, {
+        confirm: args.confirm,
+        allow_live: args.allow_live,
+        refresh_cache: args.refresh_cache,
+      });
     }
   );
 
   server.registerTool(
     "group_record",
     {
-      description:
-        "Record channels into a group, optionally with a label. Example: channels 1–10 into group 1.",
+      description: "Record channels into a group. Channel range then Group N Record.",
       inputSchema: z.object({
         group: z.number().int().positive(),
         channelFrom: z.number().int().positive(),
         channelThru: z.number().int().positive().optional(),
         label: z.string().optional(),
+        mode: z.enum(["record", "record_only"]).optional(),
+        ...programmingTransportFields,
         ...liveWriteFields,
       }),
     },
@@ -231,25 +456,54 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         channelFrom: args.channelFrom,
         channelThru: args.channelThru,
         label: args.label,
+        mode: args.mode as RecordMode | undefined,
       });
-      return sendProgrammingCommand(ctx, text, args);
+      return sendProgrammingSteps(ctx, text, {
+        confirm: args.confirm,
+        allow_live: args.allow_live,
+        refresh_cache: args.refresh_cache,
+      });
     }
   );
 
   server.registerTool(
     "target_label",
     {
-      description: 'Label a cue, group, effect, or other show target, e.g. Label Group 1 "Wash".',
+      description:
+        'Label via CLI, or OSC /eos/set/.../label for group/cue when use_osc=true. Record itself stays CLI.',
       inputSchema: z.object({
         target: programmingTargetSchema,
         number: z.union([z.number(), z.string()]),
         label: z.string(),
         cueList: z.number().int().positive().optional(),
-        part: z.number().int().nonnegative().optional(),
+        part: z.number().int().positive().optional(),
+        use_osc: z
+          .boolean()
+          .optional()
+          .describe("Send /eos/set/group|cue/.../label instead of CLI (group and cue only)."),
         ...liveWriteFields,
       }),
     },
     async (args) => {
+      const blocked = gateLiveWrite(ctx, args);
+      if (blocked) return blocked;
+
+      if (args.use_osc && args.target === "group") {
+        await ctx.client.send(setGroupLabel(Number(args.number)), args.label);
+        return jsonResult({
+          ok: true,
+          action: "set_label",
+          path: setGroupLabel(Number(args.number)),
+          label: args.label,
+        });
+      }
+
+      if (args.use_osc && args.target === "cue" && args.cueList !== undefined) {
+        const path = setCueLabel(args.cueList, args.number);
+        await ctx.client.send(path, args.label);
+        return jsonResult({ ok: true, action: "set_label", path, label: args.label });
+      }
+
       const text = buildLabelCommand({
         target: args.target as ProgrammingTarget,
         number: args.number,
@@ -257,7 +511,11 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         cueList: args.cueList,
         part: args.part,
       });
-      return sendProgrammingCommand(ctx, text, args);
+      return sendProgrammingSteps(ctx, text, {
+        confirm: args.confirm,
+        allow_live: args.allow_live,
+        refresh_cache: false,
+      });
     }
   );
 
@@ -265,13 +523,21 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
     "patch_channel",
     {
       description:
-        "Patch a channel or range via CLI. Phase 3 will add richer patch helpers; this covers basic patch syntax.",
+        "Patch via CLI. Enter Patch display first on Live desk. Pin EOS_VERSION — syntax is version-sensitive. Prefer fixtureTypeNumber and explicit Address/Universe.",
       inputSchema: z.object({
         channel: z.number().int().positive(),
         thru: z.number().int().positive().optional(),
         fixtureType: z.string().optional(),
+        fixtureTypeNumber: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Prefer type number over name when automating (spaces in type names)."),
         address: z.number().int().nonnegative().optional(),
         universe: z.number().int().positive().optional(),
+        enter_patch_display: z.boolean().optional(),
+        ...programmingTransportFields,
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
@@ -281,10 +547,16 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         channel: args.channel,
         thru: args.thru,
         fixtureType: args.fixtureType,
+        fixtureTypeNumber: args.fixtureTypeNumber,
         address: args.address,
         universe: args.universe,
+        enterPatchDisplay: args.enter_patch_display,
       });
-      return sendProgrammingCommand(ctx, text, args);
+      return sendProgrammingSteps(ctx, text, {
+        confirm: args.confirm,
+        allow_live: args.allow_live,
+        refresh_cache: args.refresh_cache,
+      });
     }
   );
 
@@ -292,18 +564,12 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
     "sync_show_targets",
     {
       description:
-        "Refresh cached groups, cue lists, and cues via OSC /eos/get/* (EosSyncLib-style). Read-only on the programmer; triggers OSC get requests.",
+        "Refresh cached groups/cues via /eos/get/*. Call after record/copy/delete — do not trust stale OSC cache for resources.",
       inputSchema: z.object({
-        groups: z.boolean().optional().describe("Sync groups (default true)"),
-        cueLists: z.boolean().optional().describe("Sync cue list index (default true)"),
-        cues: z
-          .array(z.number().int().positive())
-          .optional()
-          .describe("Cue lists to sync cues for; default all known lists after cuelist sync"),
-        subscribe: z
-          .boolean()
-          .optional()
-          .describe("Send /eos/subscribe=1 for ongoing updates (default true)"),
+        groups: z.boolean().optional(),
+        cueLists: z.boolean().optional(),
+        cues: z.array(z.number().int().positive()).optional(),
+        subscribe: z.boolean().optional().describe("Send /eos/subscribe=1 (default true on manual sync)"),
         timeoutMs: z.number().int().positive().max(60000).optional(),
       }),
       annotations: { readOnlyHint: true },
@@ -313,17 +579,17 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         groups,
         cueLists,
         cues,
-        subscribe,
+        subscribe: subscribe ?? true,
         timeoutMs,
       });
-      return jsonResult({ ok: true, ...result });
+      return jsonResult({ ok: true, ...result, eosVersion: ctx.config.eosVersion });
     }
   );
 
   server.registerTool(
     "query_groups",
     {
-      description: "Return cached groups from the last sync_show_targets (or live OSC get replies).",
+      description: "Cached groups — run sync_show_targets after programming changes.",
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
@@ -333,6 +599,7 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         groups: Object.values(state.groups),
         count: Object.keys(state.groups).length,
         lastSyncedAt: state.syncStatus.groupsAt ?? state.lastSyncedAt,
+        staleWarning: "Re-sync after record/copy/delete before trusting this cache.",
       });
     }
   );
@@ -340,7 +607,7 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
   server.registerTool(
     "query_cuelists",
     {
-      description: "Return cached cue lists from sync.",
+      description: "Cached cue lists — run sync_show_targets after programming changes.",
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
@@ -350,6 +617,7 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         cueLists: Object.values(state.cueLists),
         count: Object.keys(state.cueLists).length,
         lastSyncedAt: state.syncStatus.cueListsAt ?? state.lastSyncedAt,
+        staleWarning: "Re-sync after record/copy/delete before trusting this cache.",
       });
     }
   );
@@ -357,7 +625,7 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
   server.registerTool(
     "query_cues",
     {
-      description: "Return cached cues for a cue list (run sync_show_targets first).",
+      description: "Cached cues for a list — run sync_show_targets after programming changes.",
       inputSchema: z.object({
         cueList: z.number().int().positive(),
       }),
@@ -371,6 +639,7 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         cues,
         count: cues.length,
         lastSyncedAt: state.syncStatus.cuesAt[String(cueList)] ?? state.lastSyncedAt,
+        staleWarning: "Re-sync after record/copy/delete before trusting this cache.",
       });
     }
   );
