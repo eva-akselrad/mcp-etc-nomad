@@ -1,0 +1,80 @@
+{
+  "description": "Anonymized Nomad offline OSC captures for listener regression (PLAN §11.3).",
+  "scenarios": [
+    {
+      "name": "console mode blind then live",
+      "messages": [
+        { "address": "/eos/out/event/state", "args": [0] },
+        { "address": "/eos/out/event/state", "args": [1] }
+      ],
+      "expect": {
+        "consoleMode": "live",
+        "connected": true
+      }
+    },
+    {
+      "name": "active cue and command line",
+      "messages": [
+        { "address": "/eos/out/event/state", "args": [1] },
+        { "address": "/eos/out/active/cue/text", "args": ["Cue 1/5 — Scene 5"] },
+        { "address": "/eos/out/active/cue/1/5", "args": [0.42] },
+        { "address": "/eos/out/cmd", "args": ["Channel 1 At 75"] }
+      ],
+      "expect": {
+        "consoleMode": "live",
+        "activeCueText": "Cue 1/5 — Scene 5",
+        "activeCuePercent": 0.42,
+        "activeCueList": 1,
+        "activeCueNumber": "5",
+        "commandLine": "Channel 1 At 75"
+      }
+    },
+    {
+      "name": "fader bank labels and levels",
+      "messages": [
+        { "address": "/eos/out/fader/1/1/name", "args": ["House"] },
+        { "address": "/eos/out/fader/1/1", "args": [0.75] },
+        { "address": "/eos/out/fader/1/2/name", "args": ["Stage"] },
+        { "address": "/eos/out/fader/1/2", "args": [0.5] }
+      ],
+      "expect": {
+        "faderLabels": { "1/1": "House", "1/2": "Stage" },
+        "faderLevels": { "1/1": 0.75, "1/2": 0.5 }
+      }
+    },
+    {
+      "name": "show path and save event",
+      "messages": [
+        { "address": "/eos/out/get/show/path", "args": ["ShowFiles/rehearsal.esf3d"] },
+        { "address": "/eos/out/event/show/saved", "args": ["ShowFiles/rehearsal.esf3d"] }
+      ],
+      "expect": {
+        "showPath": "ShowFiles/rehearsal.esf3d",
+        "showFileEvent": "saved",
+        "showFilePath": "ShowFiles/rehearsal.esf3d"
+      }
+    },
+    {
+      "name": "group sync multipart",
+      "messages": [
+        { "address": "/eos/out/get/group/1/list/0", "args": [0, "uid-wash", "Wash"] },
+        { "address": "/eos/out/get/group/1/channels/list/0", "args": [0, "uid-wash", 1, 2, 3, 4, 5] }
+      ],
+      "expect": {
+        "groupCount": 1,
+        "groupLabel": "Wash",
+        "groupChannels": [1, 2, 3, 4, 5]
+      }
+    },
+    {
+      "name": "direct select bank",
+      "messages": [
+        { "address": "/eos/out/ds/2/1", "args": ["Channel 10"] },
+        { "address": "/eos/out/ds/2/2", "args": ["Channel 11"] }
+      ],
+      "expect": {
+        "directSelectLabels": { "2/1": "Channel 10", "2/2": "Channel 11" }
+      }
+    }
+  ]
+}

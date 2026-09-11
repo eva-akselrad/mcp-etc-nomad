@@ -1,5 +1,7 @@
 # MCP ETC Nomad
 
+[![CI](https://github.com/eva-akselrad/mcp-etc-nomad/actions/workflows/ci.yml/badge.svg)](https://github.com/eva-akselrad/mcp-etc-nomad/actions/workflows/ci.yml)
+
 **GitHub:** https://github.com/eva-akselrad/mcp-etc-nomad
 
 TypeScript [Model Context Protocol](https://modelcontextprotocol.io) server for **ETC Eos Family** lighting consoles — including **ETCnomad** on PC/Mac.
@@ -16,7 +18,7 @@ Control ETCnomad and Eos desks over **OSC** so an LLM can operate cues, levels, 
 | 1 Playback parity | Implemented |
 | 2 Programming parity | Implemented |
 | **3 Show & system admin** | **Implemented** |
-| 4 Hardening & distribution | Not started |
+| **4 Hardening & distribution** | **Implemented** |
 
 ## Phase 1 (playback)
 
@@ -78,7 +80,34 @@ Eos OSC domain rules: **no OSC Save/Load verbs** — Browser + `key_press` + CLI
 
 **Prompts:** `nomad-setup`, `eos-showfile`
 
-## Quick start
+## Phase 4 (hardening & distribution)
+
+| Item | Status |
+|------|--------|
+| OSC address + CLI test suite | `test/addresses-full.test.ts`, `test/cli-tools.test.ts`, `test/golden-replay.test.ts` |
+| Golden trace replay | `test/fixtures/golden-traces.json` → listener state parser |
+| CI (no hardware) | GitHub Actions — `npm run typecheck`, `build`, `test` with mock OSC peer |
+| npm package | `mcp-etc-nomad@1.0.0` — `bin`, `files`, `prepublishOnly` |
+| Cloudflare Worker relay | **Not implemented** — no prior sketch; documented as future remote-desk option |
+
+## Install
+
+### From npm (recommended)
+
+```bash
+npm install -g mcp-etc-nomad
+# or as a project dependency:
+npm install mcp-etc-nomad
+```
+
+Run the MCP server (stdio):
+
+```bash
+mcp-etc-nomad
+# equivalent: npx mcp-etc-nomad
+```
+
+### From source
 
 ```bash
 npm install
@@ -119,9 +148,15 @@ npm test
 | File | Coverage |
 |------|----------|
 | `test/osc-harness.test.ts` | Address builders, `assertLiveAllowed` gates, fader/cue bank TX sequencing |
+| `test/addresses-full.test.ts` | Full `addresses.ts` Dictionary path coverage + user prefix |
+| `test/command.test.ts` | CLI Enter/`#`/none terminators |
+| `test/keys.test.ts` | OSC hardkey aliases (`go` → `go_0`, etc.) |
+| `test/cli-tools.test.ts` | `eos_command`, keys, palettes, macros, user prefix, mock CLI echo |
+| `test/golden-replay.test.ts` | Anonymized `/eos/out/*` trace replay (PLAN §11.3) |
 | `test/programming.test.ts` | CLI programming builders (Copy/Delete Thru), tool TX, `sync_show_targets` mock-peer integration |
-| `test/mock-osc-peer.ts` | Canned `/eos/get/*` + `/eos/out/get/*` multipart replies for sync |
-| `test/show-admin.test.ts` | Show/load/merge/export needsManual paths; verified keys only (no invented browser OSC TX) |
+| `test/show-admin.test.ts` | Show save/load/merge/export gates, `needsManual` Browser paths, network session, TCP framing |
+| `test/mock-osc-peer.ts` | Canned `/eos/get/*`, `/eos/out/cmd`, active cue, preset/palette replies |
+| `test/fixtures/golden-traces.json` | Recorded Nomad-style OSC captures for regression |
 
 Fader level tests assert **TX only** — Eos echoes `/eos/out/fader` after ~3s, so the harness does not expect an immediate echo.
 
@@ -135,8 +170,8 @@ Programming tools (`record_cue`, `update_cue`, etc.) refuse LIVE/unknown console
 {
   "mcpServers": {
     "etc-nomad": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-etc-nomad/dist/index.js"],
+      "command": "mcp-etc-nomad",
+      "args": [],
       "env": {
         "EOS_HOST": "192.168.1.50",
         "EOS_PORT_TX": "8000",
@@ -148,6 +183,8 @@ Programming tools (`record_cue`, `update_cue`, etc.) refuse LIVE/unknown console
   }
 }
 ```
+
+When installed from source instead of npm, use `"command": "node"` with `"args": ["/absolute/path/to/mcp-etc-nomad/dist/index.js"]`.
 
 ## Project layout
 
