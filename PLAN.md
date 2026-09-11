@@ -318,20 +318,21 @@ Patch 1 Thru 10 Enter
 Label Group 1 "Warm Wash" Enter
 Copy Cue 1 Thru 5 Cue 10 Enter
 Move Effect 1 At Effect 2 Enter
-Export Patch "usb1:/patch.csv" Enter
 ```
 
-#### I. Session & show file (command-heavy)
+#### I. Session & show file (Browser/key/CLI — no OSC Save/Load verbs)
 
 | Tool | Description |
 |------|-------------|
-| `show_save` | Save current show |
-| `show_load` | Load show path |
-| `show_merge` | Merge from path |
-| `show_export` | Trigger export wizard targets via CLI |
-| `network_session_join` | Join session as client/backup |
+| `show_save` | Quick Save (Shift+Update), Save CLI, or Save As (Browser) — `confirm_save` for second Enter |
+| `show_load` | Open Browser load wizard — user picks show; requires `user_intent`; never auto-load |
+| `show_merge` | Browser merge flow — partial merge needs {Advanced} in CIA |
+| `show_export` | Returns `manualStepRequired` + Browser wizard path — no `/eos/export` or invented paths |
+| `get_show_path` | Query echoed show path via `/eos/get/show/path` |
+| `network_session_join` | Open mirror dialog key — ECU role join is Shell UI at boot |
+| `get_session_info` | `/eos/get/processors`, `userlist`, show/path, version — OSC to session Host only |
 
-These wrap documented CLI/browser commands; exact syntax varies by Eos version — encode version in config.
+Pin `EOS_VERSION` (.esf vs .esf3d). After load/merge: `sync_show_targets` + reconfigure banks. Do not `/eos/reset` on load.
 
 ### 6.2 Resources (read-only context for the model)
 
@@ -470,10 +471,10 @@ Lighting desks control **real power to rig**. The MCP must not treat channels ca
 
 ### Phase 3 — Show & system admin
 
-- [x] Show save/load/merge/export wrappers
+- [x] Show save/load/merge/export wrappers (Eos OSC domain: Browser/key/CLI only, no invented paths)
 - [x] Patch/unpatch helpers (+ attach/detach, identify, channel check)
-- [x] Network session tools (join/leave/identify)
-- [x] TCP transport option
+- [x] Network session tools (join/leave/identify via processors/userlist)
+- [x] TCP transport option (3032 length / 3037 SLIP; bidirectional `/eos/out/*`)
 
 ### Phase 4 — Hardening & distribution
 
