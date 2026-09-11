@@ -20,6 +20,7 @@ export function registerQueryTools(server: McpServer, ctx: EosContext): void {
         oscUserId: state.oscUserId,
         commandLine: state.commandLine,
         activeChannels: state.activeChannels,
+        activeChannelLevels: state.activeChannelLevels,
         lastMessageAt: state.lastMessageAt,
         lastSyncedAt: state.lastSyncedAt,
         allowLive: ctx.config.allowLive,

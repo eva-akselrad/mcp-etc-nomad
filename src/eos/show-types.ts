@@ -26,7 +26,31 @@ export interface CueState {
   partCount?: number;
   upTimeDurationMs?: number;
   upTimeDelayMs?: number;
+  downTimeDurationMs?: number;
+  downTimeDelayMs?: number;
+  focusTimeDurationMs?: number;
+  colorTimeDurationMs?: number;
+  beamTimeDurationMs?: number;
+  followHang?: string;
+  blocked?: boolean;
+  scene?: string;
   notes?: string;
+  raw?: unknown[];
+}
+
+export interface PatchChannelState {
+  channel: number;
+  part?: number;
+  uid?: string;
+  label?: string;
+  manufacturer?: string;
+  fixtureType?: string;
+  address?: number;
+  intensityAddress?: number;
+  currentLevel?: number;
+  gel?: string;
+  endAddress?: number;
+  parked?: boolean;
   raw?: unknown[];
 }
 
@@ -51,7 +75,40 @@ export interface SyncStatus {
   cuesAt: Record<string, string>;
   presetsAt?: string;
   palettesAt: Record<string, string>;
+  patchAt?: string;
   subscribed?: boolean;
+}
+
+export interface ActiveChannelLevel {
+  channel: number;
+  level?: number;
+  fixtureType?: string;
+  description?: string;
+  text?: string;
+}
+
+export function patchKey(channel: number, part = 1): string {
+  return `${channel}/${part}`;
+}
+
+/** Parse active channel OSC text like "[100] ETC_Fixture Label". */
+export function parseActiveChannelText(text: string): {
+  level?: number;
+  fixtureType?: string;
+  description?: string;
+} {
+  const match = text.match(/^\[(\d+(?:\.\d+)?)\]\s*(.*)$/);
+  if (!match) {
+    return { description: text.trim() || undefined };
+  }
+  const level = Number(match[1]);
+  const rest = match[2]?.trim() ?? "";
+  const parts = rest.split(/\s+/);
+  return {
+    level: Number.isFinite(level) ? level : undefined,
+    fixtureType: parts[0] || undefined,
+    description: parts.slice(1).join(" ") || rest || undefined,
+  };
 }
 
 export function paletteKey(type: string, number: number): string {

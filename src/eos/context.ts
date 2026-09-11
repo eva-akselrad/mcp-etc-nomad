@@ -13,6 +13,8 @@ export interface EosContext {
 export interface LiveWriteOptions {
   confirm?: boolean;
   allow_live?: boolean;
+  /** Bypass cue-fire rate limit (separate from confirm). */
+  override_rate_limit?: boolean;
 }
 
 export function assertLiveAllowed(
@@ -39,15 +41,15 @@ export function assertLiveAllowed(
   return null;
 }
 
-export function assertCueFireRate(ctx: EosContext, confirm?: boolean): string | null {
+export function assertCueFireRate(ctx: EosContext, overrideRateLimit?: boolean): string | null {
   const now = Date.now();
   const windowMs = 60_000;
   const max = ctx.config.maxCueFiresPerMinute;
   ctx.cueFireLog = ctx.cueFireLog.filter((t) => now - t < windowMs);
-  if (ctx.cueFireLog.length >= max && !confirm) {
+  if (ctx.cueFireLog.length >= max && !overrideRateLimit) {
     return (
       `Cue fire rate limit: ${max} playback actions per minute. ` +
-      "Pass confirm=true to override, or wait before firing again."
+      "Pass override_rate_limit=true to bypass, or wait before firing again."
     );
   }
   ctx.cueFireLog.push(now);

@@ -4,19 +4,19 @@ import type { EosContext } from "../eos/context.js";
 const OPERATOR_INSTRUCTIONS = `You are controlling an ETC Eos Family lighting console (ETCnomad or hardware desk) via OSC.
 
 Rules:
-- Prefer typed tools (channel_set_level, cue_fire, fader_set_level, palette_fire) over eos_command when available.
-- Use eos_command for programming: Record, Patch, Copy, Label, Save, Export.
-- Terminate commands with Enter or # (hash). Example: "Chan 1 At 75 Enter" or "Chan 1 At 75#".
+- Prefer typed tools over eos_command. CLI (/eos/newcmd) is fallback only when no OSC Dictionary verb exists.
+- Typed playback: go_to_cue (timed GTC), cue_go, cue_list_go, cue_hold, cue_back, grandmaster_set_level, blackout.
+- Typed levels: channel_set_level, group_set_level (intensity 0–100 for channels — NOT fader 0–1), color_set_hs, channel_set_param.
+- Typed programming: record_cue, update_cue, make_manual, set_cue_timing, show_save, patch_*, sync_show_targets.
+- Terminate CLI with Enter or # when using eos_command/eos_new_command.
 - Before live playback changes, call get_console_state. If mode is "live" (or unknown), require allow_live=true and confirm=true unless the host set EOS_ALLOW_LIVE / EOS_REQUIRE_CONFIRM=false.
+- Cue fire rate limit (default 12/min) is separate from confirm — use override_rate_limit=true to bypass, NOT confirm.
+- Intensity: channels/groups use 0–100 percent. Faders/subs/grandmaster use 0.0–1.0.
+- Go is OSC key go_0. Stop fade = cue_hold (stop key). Go back = cue_back. Prefer go_to_cue over cue_fire for timed looks.
+- Blackout = blackout tool (/eos/key/blackout). NEVER Chan Thru Out for BO.
+- Palette/preset recall: palette_fire / preset_fire (recall aliases). Sub bump: submaster_fire (submaster_bump alias).
+- Patch on Live desk: patch tools auto-enter Patch display. String RX must be ON.
 - In multi-console sessions, OSC must target the session Host.
-- Enable String RX in Nomad Setup → Show Control → OSC or command-line OSC may not work.
-- Go is OSC key go_0 (alias "go"). Stop/Back is "stop". Softkeys 1–12 use softkey_press.
-- Create fader / cue list / direct-select banks before paging or reading labels.
-
-Common programming patterns:
-- Record cue: select look → "Cue 5 Enter" → "Record Enter"
-- Group: "Channel 1 Thru 10 Enter" → "Group 1 Enter" → Label Group 1 "Wash" Enter
-- Copy cues: "Copy Cue 1 Thru 5 Cue 10 Enter"
 `;
 
 const LIVE_INSTRUCTIONS = `You are the live playback operator for an ETC Eos Family desk (including ETCnomad).
@@ -24,85 +24,66 @@ const LIVE_INSTRUCTIONS = `You are the live playback operator for an ETC Eos Fam
 Safety — follow this order on every look-changing action:
 1. Read eos://playback/state or call get_console_state and get_active_cue.
 2. Announce what will change (which cue, sub, fader, palette) before firing.
-3. Live writes (cue_fire, cue_go, cue_stop, channel/group levels, subs, faders, palettes, macros, key_press, direct_select_press) require:
+3. Live writes require:
    - confirm=true when EOS_REQUIRE_CONFIRM=true (default)
    - allow_live=true when the console is LIVE or state is unknown AND EOS_ALLOW_LIVE=false (default)
 4. Blind / offline programming does not need allow_live.
-5. Cue fire rate is limited (default 12/min); pass confirm=true to override.
-6. Never assume Go and Fire are the same: cue_go advances the list; cue_fire jumps to a numbered cue.
-7. Prefer cue_stop (Stop/Back) over guessing the Back key. Resume with key_press key=resume.
-8. Configure banks once per session: fader_bank_config, cue_list_bank_config, direct_select_bank_create — otherwise fader/DS labels stay empty.
-9. If you are not sure the desk is in blind, treat it as live.
+5. Cue fire rate is limited (default 12/min). confirm does NOT bypass — pass override_rate_limit=true.
+6. Prefer go_to_cue for timed playback; cue_fire is instant/slam. cue_go advances; cue_list_go fires a list.
+7. cue_hold stops a fade (stay). cue_back goes back. Do not confuse them.
+8. grandmaster_set_level (0–1) and blackout (BO key) — never simulate BO with Chan Thru Out.
+9. Channel/group intensity is 0–100; fader/sub/GM levels are 0–1.
+10. macro_fire requires confirm_macro=true (echo macro number/label) in addition to confirm.
+11. Configure banks once per session: fader_bank_config, cue_list_bank_config, direct_select_bank_create.
 
 Playback checklist:
-- What's running? get_active_cue + get_pending_cues
-- Fire next: cue_go with confirm + allow_live
-- Jump: cue_fire cueList + cue
-- Subs: submaster_set_level (0–1) for intensity; submaster_fire for bump (edge only — set level first if needed)
-- Palettes: palette_fire type=cp|ip|fp|bp
-- Macros: macro_fire
+- What's running? get_active_cue + get_pending_cues (per-list pending stack)
+- Timed jump: go_to_cue with confirm + allow_live
+- Next in list: cue_go or cue_list_go
+- Stop fade: cue_hold. Go back: cue_back
+- Subs: submaster_set_level (0–1); submaster_fire for bump
+- Palettes: palette_fire (recall) type=cp|ip|fp|bp
 `;
 
 const PROGRAMMER_INSTRUCTIONS = `You are programming an ETC Eos Family console via MCP (Eos OSC domain rules).
 
 ## Transport
-1. Programming ≈ /eos/cmd or /eos/newcmd — there is NO OSC Record verb. Typed tools use eos_new_command (/eos/newcmd) so leftover CLI does not corrupt the next action. Prefer eos_new_command for multi-step flows.
-2. Always terminate with # or Enter. Unterminated text stays on the command line.
-3. String RX must be ON (Setup → Show Control → OSC) or commands silently fail.
-4. /eos/event and /eos/newevent are background/event semantics — NOT interactive programming.
-5. Commands run as the OSC user. Blind/Live and selection are per that user. Patch wants Blind; live Record changes the running look.
+1. Prefer typed tools. Programming without OSC verbs uses /eos/newcmd via typed tools — NOT raw eos_command unless needed.
+2. Always terminate CLI with # or Enter. String RX must be ON.
+3. Commands run as the OSC user. Prefer Blind for programming; update_cue refuses Live without explicit cue number.
 
 ## Record / Update
-6. Record needs look + target:
-   - Two-step: Cue 5 Enter → Record Enter (style=two_step)
-   - One-shot: Record Cue 5 Enter (style=one_shot, default)
-7. Record vs Record Only (mode=record_only) — wrong choice overwrites or leaves empty targets.
-8. Update only commits manual/red values. After Go, Make Manual or re-select channels — else Update is useless.
-9. Pass scope on cue_update: all | cue_only | track. Live vs Blind Update dialogs differ on desk.
-10. Parts: Cue 1 Part 2 Enter then Record/Update — never assume multipart from bare cue number.
+4. record_cue / record_group (supports current selection, Thru, discrete channels).
+5. update_cue needs manual/red values — run make_manual after Go before Update.
+6. set_cue_timing for Time/Delay/Follow/Hang/down/IPCB times.
+7. show_save with path for immediate save (confirm required).
 
-## Copy / Move / Delete
-11. Cue copy: Copy Cue 1 Thru 5 Cue 10 Enter (copy_target). Omit cueList on active list.
-12. Channel Copy To ≠ patch copy. Live levels vs patch 111 Copy To 116 (patch_copy_to). {Plus Show}/{Only Show} softkeys change scope.
-13. Patch MOVE = double Copy To: 116 Copy To Copy To 120 (patch_move). Single Copy To is NOT move.
-14. Move Effect 1 At Effect 2 (move_target sourceType=effect) — do not reuse cue copy templates.
-15. Delete (delete_target): confirm=true AND confirm_delete=true. Desk may need second Enter. Prefer Blind. Sneak/Home/Out are NOT Delete.
-16. After record/copy/delete, refresh_cache runs sync_show_targets — do not trust stale eos://show/* resources.
-
-## Tools (Dictionary-aligned names)
-- record_cue, update_cue, record_group, record_preset, record_palette
+## Tools (Dictionary-aligned)
+- record_cue, update_cue, make_manual, set_cue_timing, record_group, record_preset, record_palette
 - copy_target, move_target, delete_target (+ confirm_delete)
-- label_target (/eos/set/.../label), group_set_channels (/eos/set/group/{n}/chans, Thru as ">")
-- patch_channel, patch_copy_to, patch_move, unpatch_channel (eos-patch)
-- sync_show_targets, get_groups, get_cuelists, get_cues, get_presets, get_palettes
+- label_target, group_set_channels, patch_* (auto Patch display on Live)
+- sync_show_targets (patch=true for patch cache), get_patch, get_groups, get_cues, …
 
-Pin EOS_VERSION in env for syntax hints. eos_command remains the parity backstop.
+Pin EOS_VERSION in env. eos_command remains parity backstop only.
 `;
 
 const PATCH_INSTRUCTIONS = `You are patching fixtures on an ETC Eos Family console via MCP (Eos OSC domain rules).
 
 ## Transport
-- Patch programming uses /eos/newcmd (typed tools) or /eos/cmd — String RX required or silent failure.
-- Commands run as OSC user; prefer Blind for patch work.
+- Patch programming uses typed patch_* tools (/eos/newcmd). String RX required.
+- On Live desk, patch tools automatically enter Patch display (forced — not optional).
 
 ## Patch rules
-17. Enter Patch display first on Live CLI (enter_patch_display=true) or syntax may misread.
-18. Pin EOS_VERSION — patch syntax is version-sensitive (check tool responses for eosVersion).
-19. Prefer explicit Address and Universe in patch_channel templates.
-20. Unpatch (unpatch_channel) ≠ Delete channel data (delete_target).
-21. Prefer fixtureTypeNumber over fixtureType names when automating (spaces in library names).
+- Pin EOS_VERSION — patch syntax is version-sensitive.
+- Prefer fixtureTypeNumber over fixtureType names when automating.
+- unpatch_channel ≠ delete_target.
+- sync_show_targets patch=true then get_patch or eos://show/patch.
 
 ## Examples
-- patch_channel channel=101 address=1 universe=1 fixtureTypeNumber=42 enter_patch_display=true
-- patch_copy_to sourceChannel=111 destChannel=116 (patch only, not live Copy To)
-- patch_move sourceChannel=116 destChannel=120 (double Copy To)
+- patch_channel channel=101 address=1 universe=1 fixtureTypeNumber=42
+- patch_copy_to sourceChannel=111 destChannel=116
+- patch_move sourceChannel=116 destChannel=120
 - unpatch_channel channel=101 confirm=true confirm_delete=true
-
-## After patch
-- Run sync_show_targets before trusting eos://show/groups or cue caches.
-- Labels: label_target sends /eos/set/.../label; group_set_channels uses /eos/set/group/{n}/chans with "1 > 9" Thru syntax.
-
-Nomad offline: dongle tier caps outputs. Multi-console: OSC to session Host only.
 `;
 
 export function registerPrompts(server: McpServer, _ctx: EosContext): void {
@@ -110,7 +91,7 @@ export function registerPrompts(server: McpServer, _ctx: EosContext): void {
     "eos-operator",
     {
       title: "Eos operator instructions",
-      description: "System guidance for safely controlling ETCnomad/Eos via MCP",
+      description: "System guidance for safely controlling ETCnomad/Eos via MCP typed tools",
     },
     () => ({
       messages: [
@@ -126,7 +107,7 @@ export function registerPrompts(server: McpServer, _ctx: EosContext): void {
     "eos-programmer",
     {
       title: "Eos programming patterns",
-      description: "OSC/cmd transport, record/update/copy/move/delete, sync, Eos domain constraints",
+      description: "Typed programming tools, sync, patch, timing — CLI fallback only",
     },
     () => ({
       messages: [
@@ -142,7 +123,7 @@ export function registerPrompts(server: McpServer, _ctx: EosContext): void {
     "eos-patch",
     {
       title: "Eos patch syntax",
-      description: "Patch display, Copy To vs move, unpatch, EOS_VERSION, Address/Universe",
+      description: "Patch display auto-entry on Live, Copy To vs move, unpatch, EOS_VERSION",
     },
     () => ({
       messages: [
@@ -159,7 +140,7 @@ export function registerPrompts(server: McpServer, _ctx: EosContext): void {
     {
       title: "Eos live playback safety",
       description:
-        "Playback safety: read active cue first, confirm and allow_live before firing, announce look changes",
+        "Playback safety: read active cue first, confirm and allow_live before firing, override_rate_limit separate from confirm",
     },
     () => ({
       messages: [

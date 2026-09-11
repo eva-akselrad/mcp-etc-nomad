@@ -60,8 +60,50 @@ export function channelSelect(): string {
   return "/eos/chan";
 }
 
+export function groupSelect(): string {
+  return "/eos/group";
+}
+
 export function groupLevel(group: number): string {
   return `/eos/group/${group}`;
+}
+
+export function grandmasterLevel(): string {
+  return "/eos/fader/0/1";
+}
+
+export function channelColorHs(channel?: number): string {
+  if (channel === undefined) {
+    return "/eos/color/hs";
+  }
+  return `/eos/chan/${channel}/color/hs`;
+}
+
+export function channelColorRgb(channel?: number): string {
+  if (channel === undefined) {
+    return "/eos/color/rgb";
+  }
+  return `/eos/chan/${channel}/color/rgb`;
+}
+
+export function channelParam(channel: number, param: string): string {
+  return `/eos/chan/${channel}/param/${param}`;
+}
+
+export function paramSet(param: string): string {
+  return `/eos/param/${param}`;
+}
+
+export function getPatchCount(): string {
+  return "/eos/get/patch/count";
+}
+
+export function getPatchIndex(index: number): string {
+  return `/eos/get/patch/index/${index}`;
+}
+
+export function getPatch(channel: number, part = 1): string {
+  return `/eos/get/patch/${channel}/${part}`;
 }
 
 export function cueFire(cueList: number | undefined, cue: number | string, part?: number): string {

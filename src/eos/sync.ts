@@ -5,6 +5,8 @@ import {
   getCueListIndex,
   getGroupCount,
   getGroupIndex,
+  getPatchCount,
+  getPatchIndex,
   getPaletteCount,
   getPaletteIndex,
   getPresetCount,
@@ -14,8 +16,8 @@ import {
 } from "./addresses.js";
 import type { EosClient } from "./client.js";
 import type { EosListener } from "./listener.js";
-import type { CueListState, CueState, GroupState, PresetState } from "./show-types.js";
-import { cueListKey, groupKey, parseBaseRecordTarget, presetKey } from "./show-types.js";
+import type { CueListState, GroupState, PatchChannelState, PresetState } from "./show-types.js";
+import { cueListKey, groupKey, parseBaseRecordTarget, patchKey, presetKey } from "./show-types.js";
 
 const PALETTE_TYPES: PaletteType[] = ["ip", "fp", "cp", "bp"];
 
@@ -25,6 +27,7 @@ export interface SyncOptions {
   cues?: number[];
   presets?: boolean;
   palettes?: boolean | PaletteType[];
+  patch?: boolean;
   subscribe?: boolean;
   timeoutMs?: number;
 }
@@ -35,6 +38,7 @@ export interface SyncResult {
   cues: Record<string, number>;
   presets: number;
   palettes: Record<string, number>;
+  patch: number;
   subscribed: boolean;
   lastSyncedAt: string;
 }
@@ -53,11 +57,13 @@ export async function syncShowTargets(
   const syncCues = options.cues ?? [];
   const syncPresets = options.presets ?? true;
   const syncPalettes = options.palettes ?? true;
+  const syncPatch = options.patch ?? false;
   const subscribe = options.subscribe ?? true;
 
   let groupCount = 0;
   let cueListCount = 0;
   let presetCount = 0;
+  let patchCount = 0;
   const cueCounts: Record<string, number> = {};
   const paletteCounts: Record<string, number> = {};
 
@@ -97,6 +103,10 @@ export async function syncShowTargets(
     await sleep(INDEX_STEP_MS);
   }
 
+  if (syncPatch) {
+    patchCount = await syncPatchFromConsole(client, listener, timeoutMs);
+  }
+
   const now = new Date().toISOString();
   listener.getState().lastSyncedAt = now;
 
@@ -106,6 +116,7 @@ export async function syncShowTargets(
     cues: cueCounts,
     presets: presetCount,
     palettes: paletteCounts,
+    patch: patchCount,
     subscribed: subscribe,
     lastSyncedAt: now,
   };
@@ -280,6 +291,48 @@ async function syncPalettesOfType(
   }
 
   listener.getState().syncStatus.palettesAt[type] = new Date().toISOString();
+  return count;
+}
+
+async function syncPatchFromConsole(
+  client: EosClient,
+  listener: EosListener,
+  timeoutMs: number
+): Promise<number> {
+  await client.send(getPatchCount());
+  const countMsg = await listener.waitFor(/^\/eos\/out\/get\/patch\/count$/, timeoutMs);
+  const count = Number(countMsg.args[0] ?? 0);
+
+  const patch: Record<string, PatchChannelState> = {};
+  for (let index = 0; index < count; index++) {
+    await client.send(getPatchIndex(index));
+    const listMsg = await listener.waitFor(
+      new RegExp(`^/eos/out/get/patch/\\d+/\\d+/list/0$`),
+      timeoutMs
+    );
+    const parts = listMsg.address.split("/");
+    const channel = Number(parts[5]);
+    const part = Number(parts[6]);
+    const base = parseBaseRecordTarget(listMsg.args);
+    patch[patchKey(channel, part)] = {
+      channel,
+      part,
+      uid: base.uid,
+      label: base.label,
+      manufacturer: listMsg.args[3] !== undefined ? String(listMsg.args[3]) : undefined,
+      fixtureType: listMsg.args[4] !== undefined ? String(listMsg.args[4]) : undefined,
+      address: typeof listMsg.args[5] === "number" ? listMsg.args[5] : undefined,
+      intensityAddress: typeof listMsg.args[6] === "number" ? listMsg.args[6] : undefined,
+      currentLevel: typeof listMsg.args[7] === "number" ? listMsg.args[7] : undefined,
+      gel: listMsg.args[8] !== undefined ? String(listMsg.args[8]) : undefined,
+      endAddress: typeof listMsg.args[19] === "number" ? listMsg.args[19] : undefined,
+      raw: listMsg.args,
+    };
+    await sleep(INDEX_STEP_MS);
+  }
+
+  listener.getState().patch = patch;
+  listener.getState().syncStatus.patchAt = new Date().toISOString();
   return count;
 }
 

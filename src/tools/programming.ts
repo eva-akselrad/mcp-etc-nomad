@@ -31,7 +31,7 @@ import {
 } from "../eos/programming.js";
 import { syncShowTargets } from "../eos/sync.js";
 import { formatGroupChannelsString } from "../eos/show-types.js";
-import { gateDestructiveWrite, gateLiveWrite, jsonResult, liveWriteFields } from "./helpers.js";
+import { ensurePatchDisplay, gateDestructiveWrite, gateLiveWrite, jsonResult, liveWriteFields } from "./helpers.js";
 
 const programmingTargetSchema = z.enum([
   "cue",
@@ -191,6 +191,18 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
       annotations: { destructiveHint: true },
     },
     async (args) => {
+      const mode = ctx.listener.getState().consoleMode;
+      if ((mode === "live" || mode === "unknown") && args.cue === undefined) {
+        return jsonResult(
+          {
+            ok: false,
+            error:
+              "update_cue refuses Live update without an explicit cue number. Pass cue= and allow_live=true.",
+          },
+          true
+        );
+      }
+
       const text = buildUpdateCommand({
         target: "cue",
         number: args.cue,
@@ -214,11 +226,17 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
   server.registerTool(
     "record_group",
     {
-      description: "Record channels into a group via /eos/newcmd.",
+      description:
+        "Record channels into a group via /eos/newcmd. Supports current selection, discrete channels, or Thru ranges.",
       inputSchema: z.object({
         group: z.number().int().positive(),
-        channelFrom: z.number().int().positive(),
+        channelFrom: z.number().int().positive().optional(),
         channelThru: z.number().int().positive().optional(),
+        channels: z.array(z.number().int().positive()).optional(),
+        ranges: z
+          .array(z.object({ from: z.number().int().positive(), thru: z.number().int().positive() }))
+          .optional(),
+        use_current_selection: z.boolean().optional(),
         label: z.string().optional(),
         mode: z.enum(["record", "record_only"]).optional(),
         ...programmingTransportFields,
@@ -230,6 +248,9 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         group: args.group,
         channelFrom: args.channelFrom,
         channelThru: args.channelThru,
+        channels: args.channels,
+        ranges: args.ranges,
+        useCurrentSelection: args.use_current_selection,
         label: args.label,
         mode: args.mode as RecordMode | undefined,
       });
@@ -531,6 +552,7 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
       annotations: { destructiveHint: true },
     },
     async (args) => {
+      const forcePatchDisplay = ensurePatchDisplay(ctx) || args.enter_patch_display;
       const text = buildPatchCommand({
         channel: args.channel,
         thru: args.thru,
@@ -538,7 +560,7 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         fixtureTypeNumber: args.fixtureTypeNumber,
         address: args.address,
         universe: args.universe,
-        enterPatchDisplay: args.enter_patch_display,
+        enterPatchDisplay: forcePatchDisplay,
       });
       return sendProgrammingSteps(ctx, text, {
         confirm: args.confirm,
@@ -562,7 +584,8 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
       annotations: { destructiveHint: true },
     },
     async (args) => {
-      const built = args.enter_patch_display
+      const forcePatchDisplay = ensurePatchDisplay(ctx) || args.enter_patch_display;
+      const built = forcePatchDisplay
         ? { style: "two_step" as const, steps: ["Patch", buildPatchCopyCommand(args)] }
         : buildPatchCopyCommand(args);
       return sendProgrammingSteps(ctx, built, {
@@ -587,8 +610,9 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
       annotations: { destructiveHint: true },
     },
     async (args) => {
+      const forcePatchDisplay = ensurePatchDisplay(ctx) || args.enter_patch_display;
       const line = buildPatchMoveCommand(args);
-      const built = args.enter_patch_display
+      const built = forcePatchDisplay
         ? { style: "two_step" as const, steps: ["Patch", line] }
         : line;
       return sendProgrammingSteps(ctx, built, {
@@ -621,8 +645,9 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
       });
       if (blocked) return blocked;
 
+      const forcePatchDisplay = ensurePatchDisplay(ctx) || args.enter_patch_display;
       const line = buildUnpatchCommand({ channel: args.channel, thru: args.thru });
-      const built = args.enter_patch_display
+      const built = forcePatchDisplay
         ? { style: "two_step" as const, steps: ["Patch", line] }
         : line;
       return sendProgrammingSteps(ctx, built, {
@@ -646,18 +671,20 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         cues: z.array(z.number().int().positive()).optional(),
         presets: z.boolean().optional(),
         palettes: z.union([z.boolean(), z.array(paletteTypeSchema)]).optional(),
+        patch: z.boolean().optional(),
         subscribe: z.boolean().optional(),
         timeoutMs: z.number().int().positive().max(60000).optional(),
       }),
       annotations: { readOnlyHint: true },
     },
-    async ({ groups, cueLists, cues, presets, palettes, subscribe, timeoutMs }) => {
+    async ({ groups, cueLists, cues, presets, palettes, patch, subscribe, timeoutMs }) => {
       const result = await syncShowTargets(ctx.client, ctx.listener, {
         groups,
         cueLists,
         cues,
         presets,
         palettes,
+        patch,
         subscribe: subscribe ?? true,
         timeoutMs,
       });
@@ -731,6 +758,23 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         presets: Object.values(state.presets),
         count: Object.keys(state.presets).length,
         lastSyncedAt: state.syncStatus.presetsAt ?? state.lastSyncedAt,
+      });
+    }
+  );
+
+  server.registerTool(
+    "get_patch",
+    {
+      description: "Cached patch channels from sync_show_targets (patch=true) via /eos/get/patch/*.",
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      const state = ctx.listener.getState();
+      return jsonResult({
+        patch: Object.values(state.patch),
+        count: Object.keys(state.patch).length,
+        lastSyncedAt: state.syncStatus.patchAt ?? state.lastSyncedAt,
       });
     }
   );
