@@ -103,8 +103,31 @@ describe("Lighting Expert priority pack", () => {
     await invokeTool(server, "blackout", { confirm: true });
     const addresses = client.sent.map((m) => m.address);
     assert.ok(addresses.includes("/eos/key/blackout"));
+    assert.equal(client.sent.at(-1)?.args[0], 1.0);
     assert.ok(!addresses.some((a) => a.includes("/eos/chan")));
     assert.ok(!client.sent.some((m) => String(m.args).toLowerCase().includes("thru")));
+  });
+
+  it("blackout default state is on (down edge)", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "blackout", { confirm: true });
+    assert.equal(client.sent.at(-1)?.address, "/eos/key/blackout");
+    assert.equal(client.sent.at(-1)?.args[0], 1.0);
+  });
+
+  it("cue_fire is alias of go_to_cue with time=0 — not /eos/cue/fire", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    const result = await invokeTool(server, "cue_fire", { cue: 3, cueList: 1, confirm: true });
+    assert.equal(isToolError(result), false);
+    const body = parseToolJson<{ action: string; canonicalAction: string; time: number }>(result);
+    assert.equal(body.action, "cue_fire");
+    assert.equal(body.canonicalAction, "go_to_cue");
+    assert.equal(body.time, 0);
+    const addresses = client.sent.map((m) => m.address);
+    assert.ok(addresses.includes("/eos/key/assert"));
+    assert.ok(!addresses.some((a) => a.match(/\/eos\/cue\/.*\/fire$/)));
   });
 
   it("grandmaster_set_level uses /eos/fader/0/1 with 0–100 API", async () => {
@@ -115,13 +138,20 @@ describe("Lighting Expert priority pack", () => {
     assert.equal(client.sent.at(-1)?.args[0], 0.5);
   });
 
-  it("park_channel sends CLI Chan N Park via newcmd", async () => {
+  it("park sends CLI Chan N Park via newcmd", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
-    const result = await invokeTool(server, "park_channel", { channel: 10, confirm: true });
+    const result = await invokeTool(server, "park", { channel: 10, confirm: true });
     assert.equal(isToolError(result), false);
     assert.equal(client.sent.at(-1)?.address, "/eos/newcmd");
     assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 Park/);
+  });
+
+  it("park At level appends CLI At N", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "park", { channel: 10, level: 50, confirm: true });
+    assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 Park At 50/);
   });
 
   it("channel_select Thru range uses thru key", async () => {
@@ -141,10 +171,10 @@ describe("Lighting Expert priority pack", () => {
     assert.ok(addresses.includes("/eos/key/_-%"));
   });
 
-  it("unpark_channel accepts ranges selection", async () => {
+  it("unpark accepts ranges selection", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
-    await invokeTool(server, "unpark_channel", {
+    await invokeTool(server, "unpark", {
       ranges: [{ from: 10, thru: 12 }],
       confirm: true,
     });
@@ -158,7 +188,7 @@ describe("Lighting Expert priority pack", () => {
     assert.equal(client.sent.at(-1)?.address, "/eos/group/2/home");
   });
 
-  it("set_cue_timing accepts time field per spec", async () => {
+  it("set_cue_timing time field and follow time; follow/hang mutex", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     await invokeTool(server, "set_cue_timing", {
@@ -167,6 +197,32 @@ describe("Lighting Expert priority pack", () => {
       confirm: true,
     });
     assert.match(String(client.sent.at(-1)?.args[0]), /Time 3/);
+
+    client.clear();
+    await invokeTool(server, "set_cue_timing", {
+      cue: 5,
+      follow: "1/2",
+      confirm: true,
+    });
+    assert.match(String(client.sent.at(-1)?.args[0]), /Follow 1\/2/);
+
+    client.clear();
+    const blocked = await invokeTool(server, "set_cue_timing", {
+      cue: 5,
+      follow: 1,
+      hang: 2,
+      confirm: true,
+    });
+    assert.equal(isToolError(blocked), true);
+    assert.equal(client.sent.length, 0);
+  });
+
+  it("timing_disable accepts state", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "timing_disable", { state: "off", confirm: true });
+    assert.equal(client.sent.at(-1)?.address, "/eos/key/timing_disable");
+    assert.equal(client.sent.at(-1)?.args[0], 0.0);
   });
 
   it("color_set_rgb maps r/g/b 0–100 to OSC 0–1", async () => {
@@ -239,14 +295,14 @@ describe("Lighting Expert priority pack", () => {
     assert.match(String(client.sent.at(-1)?.args[0]), /Make Manual/);
   });
 
-  it("park alias delegates to park_channel", async () => {
+  it("park_channel alias delegates to park", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
-    const result = await invokeTool(server, "park", { channel: 10, confirm: true });
+    const result = await invokeTool(server, "park_channel", { channel: 10, confirm: true });
     assert.equal(isToolError(result), false);
     const body = parseToolJson<{ action: string; canonicalAction: string }>(result);
-    assert.equal(body.action, "park");
-    assert.equal(body.canonicalAction, "park_channel");
+    assert.equal(body.action, "park_channel");
+    assert.equal(body.canonicalAction, "park");
     assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 Park/);
   });
 
@@ -302,11 +358,12 @@ describe("Lighting Expert priority pack", () => {
     assert.equal(client.sent.at(-1)?.address, "/eos/chan/3/home");
   });
 
-  it("home without selection is rejected", async () => {
+  it("home without selection is rejected (no whole-rig home)", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     const blocked = await invokeTool(server, "home", { confirm: true });
     assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /selection/);
     assert.equal(client.sent.length, 0);
   });
 

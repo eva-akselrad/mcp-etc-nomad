@@ -111,7 +111,7 @@ describe("assertLiveAllowed — confirm vs allow_live are separate gates", () =>
 });
 
 describe("tool TX paths via recording client", () => {
-  it("cue_fire emits /eos/cue/.../fire; cue_list_go emits /eos/cues/.../fire", async () => {
+  it("cue_fire tool uses Assert+GTC via newcmd — not /eos/cue/.../fire", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     const fire = await invokeTool(server, "cue_fire", {
@@ -120,8 +120,13 @@ describe("tool TX paths via recording client", () => {
       confirm: true,
     });
     assert.equal(isToolError(fire), false);
-    assert.equal(client.sent.at(-1)?.address, "/eos/cue/1/5/fire");
-    assert.deepEqual(client.sent.at(-1)?.args, [1.0]);
+    const addresses = client.sent.map((m) => m.address);
+    assert.ok(addresses.includes("/eos/key/assert"));
+    assert.ok(addresses.some((a) => a === "/eos/newcmd"));
+    assert.ok(!addresses.some((a) => a.match(/\/eos\/cue\/.*\/fire$/)));
+    const body = parseToolJson<{ canonicalAction: string; time: number }>(fire);
+    assert.equal(body.canonicalAction, "go_to_cue");
+    assert.equal(body.time, 0);
 
     client.clear();
     const go = await invokeTool(server, "cue_list_go", { cueList: 1, confirm: true });
@@ -196,7 +201,10 @@ describe("tool TX paths via recording client", () => {
       allow_live: true,
     });
     assert.equal(isToolError(ok), false);
-    assert.equal(client.sent.at(-1)?.address, "/eos/cue/1/2/fire");
+    const addresses = client.sent.map((m) => m.address);
+    assert.ok(addresses.includes("/eos/key/assert"));
+    assert.ok(addresses.some((a) => a === "/eos/newcmd"));
+    assert.ok(!addresses.some((a) => a.match(/\/eos\/cue\/.*\/fire$/)));
   });
 
   it("fader_set_level TX uses 0–1 floats only (no immediate /eos/out/fader echo)", async () => {

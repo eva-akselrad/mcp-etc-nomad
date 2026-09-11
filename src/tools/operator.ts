@@ -83,7 +83,7 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
-      const effectiveState = state ?? "toggle";
+      const effectiveState = state ?? "on";
       const edge = buttonStateToEdge(effectiveState);
       const address = keyPress("blackout");
       await sendButton(ctx, address, edge);
@@ -91,19 +91,27 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
     }
   );
 
-  const parkChannelFields = {
+  const parkFields = {
     ...channelSelectionFields,
+    level: z
+      .number()
+      .min(0)
+      .max(100)
+      .optional()
+      .describe("Optional Park At level 0–100 (CLI 'Chan N Park At 50')."),
     method: z.enum(["cli", "key"]).optional().default("cli"),
     ...liveWriteFields,
   };
 
-  const parkChannelHandler = async ({
+  const parkHandler = async ({
     method,
+    level,
     confirm,
     allow_live,
     ...selection
   }: {
     method?: "cli" | "key";
+    level?: number;
     confirm?: boolean;
     allow_live?: boolean;
     channel?: number;
@@ -132,7 +140,7 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
       steps.push(address);
     } else {
       try {
-        steps.push(await sendCliStep(ctx, buildChannelParkCli("Park", selection)));
+        steps.push(await sendCliStep(ctx, buildChannelParkCli("Park", { ...selection, level })));
       } catch (error) {
         return jsonResult(
           { ok: false, error: error instanceof Error ? error.message : String(error) },
@@ -145,38 +153,38 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
     ctx.listener.getState().parkedChannels = [
       ...new Set([...ctx.listener.getState().parkedChannels, ...parked]),
     ];
-    return jsonResult({ ok: true, action: "park_channel", method: transport, steps, parked });
+    return jsonResult({ ok: true, action: "park", method: transport, steps, parked, level });
   };
-
-  server.registerTool(
-    "park_channel",
-    {
-      description:
-        "Park via CLI 'Chan N Park' (/eos/newcmd) or key /eos/key/park after channel select (channels/ranges/minus). Requires confirm + allow_live.",
-      inputSchema: z.object(parkChannelFields),
-      annotations: { destructiveHint: true },
-    },
-    parkChannelHandler
-  );
 
   server.registerTool(
     "park",
     {
-      description: "Park channels (legacy alias of park_channel).",
-      inputSchema: z.object(parkChannelFields),
+      description:
+        "Park via CLI 'Chan N Park' (/eos/newcmd) or key /eos/key/park after channel select. Optional level for Park At.",
+      inputSchema: z.object(parkFields),
+      annotations: { destructiveHint: true },
+    },
+    parkHandler
+  );
+
+  server.registerTool(
+    "park_channel",
+    {
+      description: "Park channels (alias of park).",
+      inputSchema: z.object(parkFields),
       annotations: { destructiveHint: true },
     },
     async (args) => {
-      const result = await parkChannelHandler(args);
+      const result = await parkHandler(args);
       if (result.isError) return result;
       const body = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
-      body.action = "park";
-      body.canonicalAction = "park_channel";
+      body.action = "park_channel";
+      body.canonicalAction = "park";
       return jsonResult(body);
     }
   );
 
-  const unparkChannelHandler = async ({
+  const unparkHandler = async ({
     confirm,
     allow_live,
     ...selection
@@ -214,27 +222,27 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
     ctx.listener.getState().parkedChannels = ctx.listener
       .getState()
       .parkedChannels.filter((ch) => !unparked.includes(ch));
-    return jsonResult({ ok: true, action: "unpark_channel", sent, unparked });
+    return jsonResult({ ok: true, action: "unpark", sent, unparked });
   };
 
   server.registerTool(
-    "unpark_channel",
+    "unpark",
     {
       description:
-        "Unpark via CLI 'Chan N Unpark' (/eos/newcmd) with shared channels/ranges selection. Requires confirm + allow_live.",
+        "Unpark via CLI 'Chan N Unpark' (/eos/newcmd) with shared channels/ranges selection.",
       inputSchema: z.object({
         ...channelSelectionFields,
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    unparkChannelHandler
+    unparkHandler
   );
 
   server.registerTool(
-    "unpark",
+    "unpark_channel",
     {
-      description: "Unpark channels (legacy alias of unpark_channel).",
+      description: "Unpark channels (alias of unpark).",
       inputSchema: z.object({
         ...channelSelectionFields,
         ...liveWriteFields,
@@ -242,11 +250,11 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
       annotations: { destructiveHint: true },
     },
     async (args) => {
-      const result = await unparkChannelHandler(args);
+      const result = await unparkHandler(args);
       if (result.isError) return result;
       const body = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
-      body.action = "unpark";
-      body.canonicalAction = "unpark_channel";
+      body.action = "unpark_channel";
+      body.canonicalAction = "unpark";
       return jsonResult(body);
     }
   );
@@ -454,19 +462,18 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
     "home",
     {
       description:
-        "Home selected targets via /eos/at/home, /eos/chan/{n}/home, /eos/group/{n}/home, fader home, or /eos/key/home. Selection required.",
+        "Home selected targets via /eos/at/home, /eos/chan/{n}/home, /eos/group/{n}/home, or fader home. Selection required — no whole-rig home.",
       inputSchema: z.object({
         ...groupSelectionFields,
         faderBank: z.number().int().min(0).optional(),
         fader: z.number().int().positive().optional(),
-        use_key: z.boolean().optional(),
         edge: z.enum(["down", "up", "tap"]).optional(),
         ...channelSelectionFields,
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ faderBank, fader, use_key, edge, confirm, allow_live, ...selection }) => {
+    async ({ faderBank, fader, edge, confirm, allow_live, ...selection }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
@@ -493,12 +500,12 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
       const hasFader = faderBank !== undefined && fader !== undefined;
       const hasGroup = hasGroupSelection(groupInput);
 
-      if (!hasChannel && !hasGroup && !hasFader && !use_key) {
+      if (!hasChannel && !hasGroup && !hasFader) {
         return jsonResult(
           {
             ok: false,
             error:
-              "home requires selection: channels/ranges, group/groups, faderBank+fader, or use_key=true.",
+              "home requires selection: channels/ranges, group/groups, or faderBank+fader. Whole-rig home is not allowed.",
           },
           true
         );
@@ -522,9 +529,7 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
         groupInput.from === undefined;
 
       let address: string;
-      if (use_key) {
-        address = keyPress("home");
-      } else if (hasGroup && singleGroup) {
+      if (hasGroup && singleGroup) {
         address = groupHome(groupInput.group!);
       } else if (hasGroup) {
         address = atHome();
@@ -532,10 +537,8 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
         address = channelHome(channelInput.channel!);
       } else if (hasFader) {
         address = faderAction(faderBank!, fader!, "home");
-      } else if (hasChannel) {
-        address = atHome();
       } else {
-        address = keyPress("home");
+        address = atHome();
       }
 
       await sendButton(ctx, address, edge);
@@ -596,7 +599,7 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
         focus: timingValueSchema.optional(),
         color: timingValueSchema.optional(),
         beam: timingValueSchema.optional(),
-        follow: z.boolean().optional(),
+        follow: timingValueSchema.optional(),
         hang: timingValueSchema.optional(),
         block: z.boolean().optional(),
         ...liveWriteFields,
@@ -606,6 +609,13 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
     async (args) => {
       const blocked = gateLiveWrite(ctx, args);
       if (blocked) return blocked;
+
+      if (args.follow !== undefined && args.hang !== undefined) {
+        return jsonResult(
+          { ok: false, error: "Provide follow OR hang timing, not both (mutex)." },
+          true
+        );
+      }
 
       const sent = await sendCliStep(ctx, buildSetCueTimingCommand(args));
       return jsonResult({ ok: true, action: "set_cue_timing", sent, cueList: args.cueList, cue: args.cue });

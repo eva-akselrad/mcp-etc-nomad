@@ -442,7 +442,7 @@ export function buildSetCueTimingCommand(options: {
   focus?: number | string;
   color?: number | string;
   beam?: number | string;
-  follow?: boolean;
+  follow?: number | string;
   hang?: number | string;
   block?: boolean;
   /** @deprecated Use time */
@@ -473,7 +473,9 @@ export function buildSetCueTimingCommand(options: {
   if (focus !== undefined) parts.push(`Focus ${fmt(focus)}`);
   if (color !== undefined) parts.push(`Color ${fmt(color)}`);
   if (beam !== undefined) parts.push(`Beam ${fmt(beam)}`);
-  if (options.follow) parts.push("Follow");
+  if (options.follow !== undefined) {
+    parts.push(`Follow ${fmt(options.follow)}`);
+  }
   if (options.hang !== undefined) parts.push(`Hang ${fmt(options.hang)}`);
   if (options.block) parts.push("Block");
   return parts.join(" ");
@@ -502,11 +504,21 @@ export function buildGoToCueCommand(options: {
   return `Go To Cue ${cueSeg}`;
 }
 
-export function buildParkCommand(options: { channel: number; thru?: number }): string {
+export function buildParkCommand(options: {
+  channel: number;
+  thru?: number;
+  level?: number;
+}): string {
+  let base: string;
   if (options.thru !== undefined && options.thru !== options.channel) {
-    return `Chan ${options.channel} Thru ${options.thru} Park`;
+    base = `Chan ${options.channel} Thru ${options.thru} Park`;
+  } else {
+    base = `Chan ${options.channel} Park`;
   }
-  return `Chan ${options.channel} Park`;
+  if (options.level !== undefined) {
+    return `${base} At ${options.level}`;
+  }
+  return base;
 }
 
 export function buildUnparkCommand(options: { channel: number; thru?: number }): string {
@@ -525,6 +537,7 @@ export function buildChannelParkCli(
     ranges?: Array<{ from: number; thru: number }>;
     from?: number;
     thru?: number;
+    level?: number;
   }
 ): string {
   const ranges = [...(input.ranges ?? [])];
@@ -537,15 +550,16 @@ export function buildChannelParkCli(
     return builder({
       channel: range.from,
       thru: range.thru !== range.from ? range.thru : undefined,
+      level: verb === "Park" ? input.level : undefined,
     });
   }
   if (input.channel !== undefined) {
     const builder = verb === "Park" ? buildParkCommand : buildUnparkCommand;
-    return builder({ channel: input.channel, thru: input.thru });
+    return builder({ channel: input.channel, thru: input.thru, level: input.level });
   }
   if (input.channels?.length === 1) {
     const builder = verb === "Park" ? buildParkCommand : buildUnparkCommand;
-    return builder({ channel: input.channels[0] });
+    return builder({ channel: input.channels[0], level: input.level });
   }
   throw new Error(
     `CLI ${verb} needs a single channel or one Thru range; use method=key for multi-channel selection.`

@@ -9,8 +9,9 @@ Lighting Expert canonical API for the **lighting-ops** tool pack. OSC paths foll
 | `palette_recall` | `palette_fire` | Descriptions say **Recall**, not only "fire" |
 | `preset_recall` | `preset_fire` | Descriptions say **Recall**, not only "fire" |
 | `submaster_bump` | `submaster_fire` | Descriptions say **Bump**, not only "fire" |
-| `park_channel` | `park` | Shared channels/ranges selection |
-| `unpark_channel` | `unpark` | Shared channels/ranges selection |
+| `park` | `park_channel` | Shared channels/ranges selection; optional `level` (Park At) |
+| `unpark` | `unpark_channel` | Shared channels/ranges selection |
+| `go_to_cue` | `cue_fire` | `cue_fire` = `go_to_cue` with `time=0` (Assert+GTC) — NOT `/eos/cue/.../fire` |
 
 **Blackout ≠ GM=0.** `blackout` and `grandmaster_set_level` are separate tools. Never implement BO as `grandmaster_set_level(0)`.
 
@@ -36,13 +37,15 @@ Thru extends `channel_select` and `channel_set_level`. Minus deselect uses `/_-%
 
 ## Field diffs (Lighting Expert)
 
-### `go_to_cue`
+### `go_to_cue` / `cue_fire`
 - **XOR:** exactly one of `cue`, `out: true`, or `cueZero: true`
+- `cue_fire` — alias of `go_to_cue` with `time=0` (Assert + GTC via `/eos/newcmd`); never `/eos/cue/.../fire`
 - `override_rate_limit` separate from `confirm` (confirm does not bypass rate cap)
 - No rate% OSC tool
 
-### `park_channel` / `unpark_channel`
+### `park` / `unpark`
 - Shared `channels` + `ranges` selection shape (legacy `channel`/`from`/`thru` accepted)
+- Optional `level` 0–100 on park → CLI `Chan N Park At {level}`
 - CLI single range or `method=key` for multi-channel park
 
 ### `highlight` / `rem_dim`
@@ -57,27 +60,16 @@ Thru extends `channel_select` and `channel_set_level`. Minus deselect uses `/_-%
 ```ts
 { state?: "on"|"off"|"toggle" }
 ```
-- Default `toggle` when omitted (OSC button tap)
-
-### `sneak`
-```ts
-{ channels?, ranges?, minus?, time?: number|string, edge?: "down"|"up"|"tap" }
-```
-- Optional channel selection before key; optional `time` prepends CLI `Time N`
-
-### `make_manual`
-- Optional `channels`/`ranges`/`minus` — OSC select programmer, then CLI `Make Manual`
-
-### `channel_set_param`
-- Canonical arg: `value` 0–100 (`level` accepted as deprecated alias)
+- `blackout` default `on` when omitted; `timing_disable` default `toggle`
 
 ### `home`
 - Requires selection: `channels`/`ranges`, `group`/`groups`, or `faderBank`+`fader`
-- Single group → `/eos/group/{n}/home`; multi → `/eos/at/home`
+- Never whole-rig home (no bare `/eos/key/home` without selection)
 
 ### `set_cue_timing`
 - Fields: `time`, `delay`, `down`, `downDelay`, `focus`, `color`, `beam`, `follow`, `hang`, `block`
-- Values are `number | string` unions (seconds or Eos time tokens)
+- `follow` and `hang` are `number | string` (mutex — not both)
+- Legacy `upTime` → `time` alias in builder
 
 ## Tools
 
