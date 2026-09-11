@@ -162,7 +162,13 @@ Fader level tests assert **TX only** — Eos echoes `/eos/out/fader` after ~3s, 
 
 Programming tools (`record_cue`, `update_cue`, etc.) refuse LIVE/unknown console state unless `allow_live=true` (mock tests cover this). `sync_show_targets` + `get_groups` / `get_cuelists` / `get_cues` populate listener cache; MCP resources `eos://show/*` read that cache.
 
-**Nomad offline smoke (manual):** with ETCnomad running and OSC enabled (see above), verify channel level, cue fire, group+cue record via CLI (`record_cue`), and delete with `confirm_delete`. Full checklist: PLAN.md §11.2.
+**Nomad offline smoke (manual):** with ETCnomad running and OSC enabled (see above):
+
+1. **Playback / programming:** channel level, cue fire, group+cue record via CLI (`record_cue`), delete with `confirm_delete`
+2. **Show files (Browser):** `show_save` (quick save + path echo), `show_load` and `show_merge` with `user_intent` + `confirm_path` — complete the CIA Browser wizard on the desk (tools return `needsManual`; no auto-load)
+3. **Gates:** verify `show_merge` / `show_load` refuse LIVE without `allow_live`; `network_session_leave` requires `user_intent` when gating is on
+
+Full checklist: PLAN.md §11.2.
 
 ## Cursor / Claude Desktop
 

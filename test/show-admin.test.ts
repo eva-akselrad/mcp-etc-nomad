@@ -194,6 +194,56 @@ describe("show_admin tools (TX via recording client)", () => {
     assert.ok(keys.some((m) => m.address.includes("open_file")));
   });
 
+  it("show_merge requires user_intent", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+    const blocked = await invokeTool(server, "show_merge", { confirm: true });
+    assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /user_intent/);
+    assert.equal(client.sent.length, 0);
+  });
+
+  it("show_merge refuses LIVE without allow_live", async () => {
+    const { server, client } = createHarness({ consoleMode: "live" });
+    const blocked = await invokeTool(server, "show_merge", {
+      confirm: true,
+      user_intent: "merge archived show into current",
+    });
+    assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /Blind|allow_live/);
+    assert.equal(client.sent.length, 0);
+  });
+
+  it("show_merge requires confirm_path when gating is on", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+    const blocked = await invokeTool(server, "show_merge", {
+      confirm: true,
+      user_intent: "merge archived show into current",
+    });
+    assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /confirm_path/);
+    assert.equal(client.sent.length, 0);
+  });
+
+  it("show_merge returns needsManual and sends Merge CLI when allowed", async () => {
+    const { server, client } = createHarness({
+      consoleMode: "blind",
+      config: { requireConfirm: false },
+    });
+    const result = await invokeTool(server, "show_merge", {
+      user_intent: "merge archived show into current",
+    });
+    assert.equal(isToolError(result), false);
+    const body = parseToolJson<{ needsManual: boolean; browserPath: string; sent: string[] }>(
+      result
+    );
+    assert.equal(body.needsManual, true);
+    assert.match(body.browserPath, /Merge/);
+    const cmds = client.sent.filter((m) => m.address === "/eos/newcmd").map((m) => String(m.args[0]));
+    assert.ok(cmds.some((c) => /Merge Enter/.test(c)));
+    const keys = client.sent.filter((m) => m.address.startsWith("/eos/key/"));
+    assert.equal(keys.length, 0);
+  });
+
   it("show_export returns needsManual without invented paths", async () => {
     const { server, client } = createHarness({
       consoleMode: "blind",
@@ -279,6 +329,28 @@ describe("network session tools", () => {
       open_mirror_dialog: true,
     });
     assert.equal(client.sent.at(-1)?.address, "/eos/key/open_mirror_dialog");
+  });
+
+  it("network_session_leave requires user_intent when gating is on", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+    const blocked = await invokeTool(server, "network_session_leave", { confirm: true });
+    assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /user_intent/);
+    assert.equal(client.sent.length, 0);
+  });
+
+  it("network_session_leave sends exit key when gates satisfied", async () => {
+    const { server, client } = createHarness({
+      consoleMode: "blind",
+      config: { requireConfirm: false },
+    });
+    const result = await invokeTool(server, "network_session_leave", {
+      user_intent: "exit mirror mode on tech desk",
+    });
+    assert.equal(isToolError(result), false);
+    const body = parseToolJson<{ needsManual: boolean; sent: string[] }>(result);
+    assert.equal(body.needsManual, true);
+    assert.ok(body.sent.some((s) => s.includes("/eos/key/exit")));
   });
 });
 
