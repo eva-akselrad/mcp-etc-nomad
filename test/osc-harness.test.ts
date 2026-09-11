@@ -11,6 +11,7 @@ import {
   faderBankConfig,
   faderLevel,
   getCueIndex,
+  getCueIndexPrimary,
   getCueListIndex,
   getGroupIndex,
   getPaletteIndex,
@@ -63,6 +64,7 @@ describe("address builders (Dictionary OSC paths)", () => {
     assert.equal(getGroupIndex(), "/eos/get/group/index");
     assert.equal(getCueListIndex(), "/eos/get/cuelist/index");
     assert.equal(getCueIndex(1), "/eos/get/cue/1/noparts/index");
+    assert.equal(getCueIndexPrimary(1), "/eos/get/cue/1/index");
     assert.equal(getPresetIndex(), "/eos/get/preset/index");
     assert.equal(getPaletteIndex("ip"), "/eos/get/ip/index");
     assert.doesNotMatch(getGroupIndex(), /\/index\/\d/);

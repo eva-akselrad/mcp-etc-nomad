@@ -41,25 +41,57 @@ export function registerPaletteTools(server: McpServer, ctx: EosContext): void {
     }
   );
 
+  const paletteRecallFields = {
+    type: paletteTypeSchema,
+    palette: z.number().int().positive(),
+    ...liveWriteFields,
+  };
+
+  const paletteRecallHandler = async ({
+    type,
+    palette,
+    confirm,
+    allow_live,
+  }: {
+    type: string;
+    palette: number;
+    confirm?: boolean;
+    allow_live?: boolean;
+  }) => {
+    const blocked = gateLiveWrite(ctx, { confirm, allow_live });
+    if (blocked) return blocked;
+
+    const stem = PALETTE_STEM[type];
+    const address = paletteFire(stem);
+    await ctx.client.send(address, palette);
+    return jsonResult({ ok: true, action: "palette_recall", address, type: stem, palette });
+  };
+
+  server.registerTool(
+    "palette_recall",
+    {
+      description:
+        "Recall a palette onto the current selection (OSC palette recall verb on /eos/{ip|fp|cp|bp}).",
+      inputSchema: z.object(paletteRecallFields),
+      annotations: { destructiveHint: true },
+    },
+    paletteRecallHandler
+  );
+
   server.registerTool(
     "palette_fire",
     {
-      description: "Recall (fire) a palette onto the current selection via /eos/{ip|fp|cp|bp}/fire",
-      inputSchema: z.object({
-        type: paletteTypeSchema,
-        palette: z.number().int().positive(),
-        ...liveWriteFields,
-      }),
+      description: "Recall a palette onto the current selection (alias of palette_recall).",
+      inputSchema: z.object(paletteRecallFields),
       annotations: { destructiveHint: true },
     },
-    async ({ type, palette, confirm, allow_live }) => {
-      const blocked = gateLiveWrite(ctx, { confirm, allow_live });
-      if (blocked) return blocked;
-
-      const stem = PALETTE_STEM[type];
-      const address = paletteFire(stem);
-      await ctx.client.send(address, palette);
-      return jsonResult({ ok: true, action: "palette_fire", address, type: stem, palette });
+    async (args) => {
+      const result = await paletteRecallHandler(args);
+      if (result.isError) return result;
+      const body = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+      body.action = "palette_fire";
+      body.canonicalAction = "palette_recall";
+      return jsonResult(body);
     }
   );
 
@@ -77,23 +109,52 @@ export function registerPaletteTools(server: McpServer, ctx: EosContext): void {
     }
   );
 
+  const presetRecallFields = {
+    preset: z.number().int().positive(),
+    ...liveWriteFields,
+  };
+
+  const presetRecallHandler = async ({
+    preset,
+    confirm,
+    allow_live,
+  }: {
+    preset: number;
+    confirm?: boolean;
+    allow_live?: boolean;
+  }) => {
+    const blocked = gateLiveWrite(ctx, { confirm, allow_live });
+    if (blocked) return blocked;
+
+    const address = presetFire();
+    await ctx.client.send(address, preset);
+    return jsonResult({ ok: true, action: "preset_recall", address, preset });
+  };
+
+  server.registerTool(
+    "preset_recall",
+    {
+      description: "Recall a preset onto the current selection (OSC preset recall on /eos/preset).",
+      inputSchema: z.object(presetRecallFields),
+      annotations: { destructiveHint: true },
+    },
+    presetRecallHandler
+  );
+
   server.registerTool(
     "preset_fire",
     {
-      description: "Recall (fire) a preset onto the current selection via /eos/preset/fire",
-      inputSchema: z.object({
-        preset: z.number().int().positive(),
-        ...liveWriteFields,
-      }),
+      description: "Recall a preset onto the current selection (alias of preset_recall).",
+      inputSchema: z.object(presetRecallFields),
       annotations: { destructiveHint: true },
     },
-    async ({ preset, confirm, allow_live }) => {
-      const blocked = gateLiveWrite(ctx, { confirm, allow_live });
-      if (blocked) return blocked;
-
-      const address = presetFire();
-      await ctx.client.send(address, preset);
-      return jsonResult({ ok: true, action: "preset_fire", address, preset });
+    async (args) => {
+      const result = await presetRecallHandler(args);
+      if (result.isError) return result;
+      const body = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+      body.action = "preset_fire";
+      body.canonicalAction = "preset_recall";
+      return jsonResult(body);
     }
   );
 }

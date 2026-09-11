@@ -41,8 +41,9 @@ A human operator on Nomad can roughly do four classes of work. The MCP must cove
 
 ### 2.1 Live playback (show running)
 
-- Fire cues, go/back, stop, pause, resume
-- Raise/lower submasters, faders, grand master
+- Fire cues, Go To Cue (timed), go/back, hold, pause, resume
+- Raise/lower submasters, faders, grand master, blackout
+- Park/unpark, highlight, rem dim, timing disable, sneak, home
 - Bump subs, load/unload fader pages
 - Recall palettes and presets live
 - Run macros
@@ -98,14 +99,18 @@ Channel 1 Thru 10 At Full Record Preset 1 Enter
 | Select group 5, full | `group_set_level` | OSC `/eos/group/5/full` |
 | Pan/tilt/color wheels | `wheel_adjust`, `color_set_rgb` | OSC wheel/color |
 | Fire cue 10 on list 1 | `cue_fire` | OSC `/eos/cue/1/10/fire` |
-| Go next cue | `key_press` (Go) | OSC `/eos/key/go` |
+| Go To Cue (timed) | `go_to_cue` | OSC cue select + `/eos/key/go_to_cue` |
+| Go next cue | `cue_go` | OSC `/eos/key/go_0` |
+| Blackout | `blackout` | OSC `/eos/key/blackout` (never Chan Thru Out) |
+| Grand master | `grandmaster_set_level` | OSC `/eos/fader/0/1` |
 | Set sub 3 to 50% | `submaster_set_level` | OSC `/eos/sub/3=0.5` |
-| Recall color palette 2 | `palette_fire` | OSC `/eos/cp/fire=2` |
+| Recall color palette 2 | `palette_recall` | OSC `/eos/cp` recall |
 | Run macro 5 | `macro_fire` | OSC `/eos/macro/fire=5` |
 | Record cue 1.5 | `eos_command` | `Cue 1.5 Enter Record Enter` |
 | Patch channel 101 | `eos_command` | `Patch 101 Enter` |
 | Copy cue 1 thru 5 cue 10 | `eos_command` | `Copy Cue 1 Thru 5 Cue 10 Enter` |
-| Save show | `eos_command` | Browser path or hotkey via `key_press` |
+| Save show | `show_save` | CLI Save path via `/eos/newcmd` |
+| Patch cache | `get_patch` / `eos://show/patch` | OSC `/eos/get/patch/*` sync |
 | List all groups | `query_groups` | OSC cache + `/eos/out/*` sync |
 | Is console blind? | `get_console_state` | OSC `/eos/out/event/state` |
 | Open magic sheet 3 | `magic_sheet_open` | OSC `/eos/ms=3` |
@@ -246,8 +251,8 @@ All OSC to/from a session must go through the **session Host**. MCP config needs
 | `pixelmap_select` | `/eos/pixmap` |
 | `magic_sheet_open` | `/eos/ms` |
 | `snapshot_select` | Snapshot targets |
-| `preset_select` / `preset_fire` | Presets |
-| `palette_select` / `palette_fire` | IP, FP, CP, BP |
+| `preset_select` / `preset_recall` (`preset_fire` alias) | Presets |
+| `palette_select` / `palette_recall` (`palette_fire` alias) | IP, FP, CP, BP |
 
 #### C. Playback
 
@@ -271,7 +276,7 @@ All OSC to/from a session must go through the **session Host**. MCP config needs
 | `fader_load` / `fader_unload` / `fader_stop` / `fader_fire` | Fader actions |
 | `fader_bank_page` | Page faders |
 | `submaster_set_level` | Sub intensity |
-| `submaster_fire` | Bump sub |
+| `submaster_bump` (`submaster_fire` alias) | Bump sub |
 
 #### E. Keys & macros
 

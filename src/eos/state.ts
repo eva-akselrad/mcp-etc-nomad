@@ -1,7 +1,9 @@
 import type {
+  ActiveChannelLevel,
   CueListState,
   CueState,
   GroupState,
+  PatchChannelState,
   PaletteState,
   PresetState,
   SyncStatus,
@@ -68,8 +70,12 @@ export interface EosState {
   consoleGet?: ConsoleGetCache;
   activeCue: ActiveCueState;
   activeChannels?: string;
+  activeChannelLevels: ActiveChannelLevel[];
   pendingCue: PendingCueState;
   pendingCues: Record<string, unknown>;
+  pendingByCueList: Record<string, PendingCueState[]>;
+  patch: Record<string, PatchChannelState>;
+  parkedChannels: number[];
   faderLevels: Record<string, number>;
   faderLabels: Record<string, string>;
   faders: Record<string, FaderSlotState>;
@@ -92,8 +98,12 @@ export function createInitialState(): EosState {
     session: {},
     consoleGet: {},
     activeCue: {},
+    activeChannelLevels: [],
     pendingCue: { raw: {} },
     pendingCues: {},
+    pendingByCueList: {},
+    patch: {},
+    parkedChannels: [],
     faderLevels: {},
     faderLabels: {},
     faders: {},

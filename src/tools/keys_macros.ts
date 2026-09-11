@@ -82,20 +82,48 @@ export function registerKeyMacroTools(server: McpServer, ctx: EosContext): void 
   server.registerTool(
     "macro_fire",
     {
-      description: "Run a macro by number via /eos/macro/fire",
+      description:
+        "Run a macro by number via /eos/macro/fire. Requires confirm_macro in addition to confirm when EOS_REQUIRE_CONFIRM=true.",
       inputSchema: z.object({
         macro: z.number().int().positive(),
+        confirm_macro: z
+          .boolean()
+          .optional()
+          .describe(
+            "Required when EOS_REQUIRE_CONFIRM=true — explicit macro-fire confirmation (separate from confirm)."
+          ),
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ macro, confirm, allow_live }) => {
+    async ({ macro, confirm_macro, confirm, allow_live }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
+      if (ctx.config.requireConfirm && !confirm_macro) {
+        return jsonResult(
+          {
+            ok: false,
+            error:
+              "Pass confirm_macro=true to fire a macro (EOS_REQUIRE_CONFIRM=true). Echo the macro number/label before firing.",
+            macro,
+          },
+          true
+        );
+      }
+
+      const state = ctx.listener.getState();
+      const macroLabel = state.labels[`macro/${macro}`];
       const address = macroFire();
       await ctx.client.send(address, macro);
-      return jsonResult({ ok: true, action: "macro_fire", address, macro });
+      return jsonResult({
+        ok: true,
+        action: "macro_fire",
+        address,
+        macro,
+        label: macroLabel,
+        echoed: `Macro ${macro}${macroLabel ? ` "${macroLabel}"` : ""}`,
+      });
     }
   );
 

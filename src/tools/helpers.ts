@@ -15,9 +15,20 @@ export const liveWriteFields = {
     ),
 };
 
+export const cueFireFields = {
+  ...liveWriteFields,
+  override_rate_limit: z
+    .boolean()
+    .optional()
+    .describe(
+      "Bypass the cue-fire rate limit (default 12/min). Separate from confirm — confirm does NOT bypass rate limits."
+    ),
+};
+
 export type LiveWriteInput = {
   confirm?: boolean;
   allow_live?: boolean;
+  override_rate_limit?: boolean;
 };
 
 export function jsonResult(data: unknown, isError = false) {
@@ -197,11 +208,17 @@ export function gateDestructiveWrite(ctx: EosContext, options: DestructiveWriteO
 export function gateCueFire(ctx: EosContext, options: LiveWriteInput) {
   const live = gateLiveWrite(ctx, options);
   if (live) return live;
-  const rate = assertCueFireRate(ctx, options.confirm);
+  const rate = assertCueFireRate(ctx, options.override_rate_limit);
   if (rate) {
     return jsonResult({ ok: false, error: rate }, true);
   }
   return null;
+}
+
+/** Force Patch display entry on Live desk before patch CLI tools. */
+export function ensurePatchDisplay(ctx: EosContext): boolean {
+  const mode = ctx.listener.getState().consoleMode;
+  return mode === "live" || mode === "unknown";
 }
 
 export async function sendButton(

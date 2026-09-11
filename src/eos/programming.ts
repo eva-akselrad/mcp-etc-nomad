@@ -383,22 +383,151 @@ export function buildLabelCommand(options: {
 }
 
 export function buildGroupFromChannelsCommand(options: {
-  channelFrom: number;
+  channelFrom?: number;
   channelThru?: number;
+  channels?: number[];
+  ranges?: Array<{ from: number; thru: number }>;
+  useCurrentSelection?: boolean;
   group: number;
   label?: string;
   mode?: RecordMode;
 }): string {
-  const range =
-    options.channelThru !== undefined
-      ? `Channel ${options.channelFrom} Thru ${options.channelThru}`
-      : `Channel ${options.channelFrom}`;
+  const selectionParts: string[] = [];
+  if (options.useCurrentSelection) {
+    // Current programmer selection — no channel prefix.
+  } else if (options.channelFrom !== undefined) {
+    selectionParts.push(
+      options.channelThru !== undefined
+        ? `Channel ${options.channelFrom} Thru ${options.channelThru}`
+        : `Channel ${options.channelFrom}`
+    );
+  } else {
+    for (const range of options.ranges ?? []) {
+      selectionParts.push(`Channel ${range.from} Thru ${range.thru}`);
+    }
+    if (options.channels?.length) {
+      selectionParts.push(
+        options.channels.map((ch, i) => (i === 0 ? `Channel ${ch}` : `${ch}`)).join(" + ")
+      );
+    }
+    if (selectionParts.length === 0) {
+      throw new Error(
+        "Provide channelFrom/thru, channels/ranges, or useCurrentSelection for record_group."
+      );
+    }
+  }
+
   const verb = recordVerb(options.mode ?? "record");
-  const parts = [range, `Group ${options.group}`, verb];
+  const parts = [...selectionParts, `Group ${options.group}`, verb];
   if (options.label) {
     parts.push(`Label Group ${options.group} ${JSON.stringify(options.label)}`);
   }
   return parts.join(" ");
+}
+
+/** Make Manual — required after Go before Update commits manual values. */
+export function buildMakeManualCommand(): string {
+  return "Make Manual";
+}
+
+/** Set cue timing fields via CLI (Time, Delay, Follow/Hang, up/down, IPCB). */
+export function buildSetCueTimingCommand(options: {
+  cue: number | string;
+  cueList?: number;
+  part?: number;
+  upTime?: number | string;
+  upDelay?: number | string;
+  downTime?: number | string;
+  downDelay?: number | string;
+  focusTime?: number | string;
+  colorTime?: number | string;
+  beamTime?: number | string;
+  follow?: boolean;
+  hang?: number | string;
+  block?: boolean;
+}): string {
+  const fmt = (value: number | string) => String(value);
+  const parts = [formatCueRef({ cueList: options.cueList, cue: options.cue, part: options.part })];
+  if (options.upTime !== undefined) parts.push(`Time ${fmt(options.upTime)}`);
+  if (options.upDelay !== undefined) parts.push(`Delay ${fmt(options.upDelay)}`);
+  if (options.downTime !== undefined) parts.push(`Down ${fmt(options.downTime)}`);
+  if (options.downDelay !== undefined) parts.push(`Down Delay ${fmt(options.downDelay)}`);
+  if (options.focusTime !== undefined) parts.push(`Focus ${fmt(options.focusTime)}`);
+  if (options.colorTime !== undefined) parts.push(`Color ${fmt(options.colorTime)}`);
+  if (options.beamTime !== undefined) parts.push(`Beam ${fmt(options.beamTime)}`);
+  if (options.follow) parts.push("Follow");
+  if (options.hang !== undefined) parts.push(`Hang ${fmt(options.hang)}`);
+  if (options.block) parts.push("Block");
+  return parts.join(" ");
+}
+
+/** Go To Cue via CLI (preferred over key sequence). */
+export function buildGoToCueCommand(options: {
+  cue?: number | string;
+  cueList?: number;
+  out?: boolean;
+}): string {
+  if (options.out) {
+    return "Go To Cue Out";
+  }
+  if (options.cue === undefined) {
+    throw new Error("Provide cue or out=true for Go To Cue.");
+  }
+  const cueSeg = targetNumber(options.cue, "cue");
+  if (options.cueList !== undefined) {
+    return `Go To Cue ${options.cueList}/${cueSeg}`;
+  }
+  return `Go To Cue ${cueSeg}`;
+}
+
+export function buildParkCommand(options: { channel: number; thru?: number }): string {
+  if (options.thru !== undefined && options.thru !== options.channel) {
+    return `Chan ${options.channel} Thru ${options.thru} Park`;
+  }
+  return `Chan ${options.channel} Park`;
+}
+
+export function buildUnparkCommand(options: { channel: number; thru?: number }): string {
+  if (options.thru !== undefined && options.thru !== options.channel) {
+    return `Chan ${options.channel} Thru ${options.thru} Unpark`;
+  }
+  return `Chan ${options.channel} Unpark`;
+}
+
+/** Build park/unpark CLI from shared selection — single channel or one Thru range only. */
+export function buildChannelParkCli(
+  verb: "Park" | "Unpark",
+  input: {
+    channel?: number;
+    channels?: number[];
+    ranges?: Array<{ from: number; thru: number }>;
+    from?: number;
+    thru?: number;
+  }
+): string {
+  const ranges = [...(input.ranges ?? [])];
+  if (input.from !== undefined) {
+    ranges.push({ from: input.from, thru: input.thru ?? input.from });
+  }
+  if (ranges.length === 1) {
+    const range = ranges[0];
+    const builder = verb === "Park" ? buildParkCommand : buildUnparkCommand;
+    return builder({
+      channel: range.from,
+      thru: range.thru !== range.from ? range.thru : undefined,
+    });
+  }
+  if (input.channel !== undefined) {
+    const builder = verb === "Park" ? buildParkCommand : buildUnparkCommand;
+    return builder({ channel: input.channel, thru: input.thru });
+  }
+  if (input.channels?.length === 1) {
+    const builder = verb === "Park" ? buildParkCommand : buildUnparkCommand;
+    return builder({ channel: input.channels[0] });
+  }
+  throw new Error(
+    `CLI ${verb} needs a single channel or one Thru range; use method=key for multi-channel selection.`
+  );
 }
 
 /**

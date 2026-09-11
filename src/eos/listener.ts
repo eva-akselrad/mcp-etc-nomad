@@ -8,8 +8,10 @@ import {
   cueListKey,
   groupKey,
   paletteKey,
+  parseActiveChannelText,
   parseBaseRecordTarget,
   parseOscNumberList,
+  patchKey,
   presetKey,
 } from "./show-types.js";
 
@@ -197,7 +199,24 @@ export class EosListener extends EventEmitter {
     }
 
     if (address === "/eos/out/active/chan") {
-      this.state.activeChannels = String(args[0] ?? "");
+      const channel = Number(args[0]);
+      const text = String(args[1] ?? args[0] ?? "");
+      if (typeof args[0] === "number" && args[1] !== undefined) {
+        const parsed = parseActiveChannelText(text);
+        const entry = {
+          channel,
+          ...parsed,
+          text,
+        };
+        const existing = this.state.activeChannelLevels.filter((c) => c.channel !== channel);
+        this.state.activeChannelLevels = [...existing, entry];
+        this.state.activeChannels = existing
+          .map((c) => `${c.channel}: [${c.level ?? "?"}]`)
+          .concat(`${channel}: [${parsed.level ?? "?"}]`)
+          .join(", ");
+      } else {
+        this.state.activeChannels = text;
+      }
     }
 
     if (address === "/eos/out/pending/cue/text") {
@@ -206,8 +225,22 @@ export class EosListener extends EventEmitter {
 
     const pendingCueMatch = address.match(/^\/eos\/out\/pending\/cue\/([^/]+)\/([^/]+)$/);
     if (pendingCueMatch) {
-      this.state.pendingCue.cueList = Number(pendingCueMatch[1]);
-      this.state.pendingCue.cue = pendingCueMatch[2];
+      const cueList = Number(pendingCueMatch[1]);
+      const cue = pendingCueMatch[2];
+      this.state.pendingCue.cueList = cueList;
+      this.state.pendingCue.cue = cue;
+      const listKey = String(cueList);
+      const pending: (typeof this.state.pendingCue) = {
+        cueList,
+        cue,
+        text: this.state.pendingCue.text,
+        raw: { address, args },
+      };
+      const existing = this.state.pendingByCueList[listKey] ?? [];
+      this.state.pendingByCueList[listKey] = [
+        ...existing.filter((p) => p.cue !== cue),
+        pending,
+      ];
     }
 
     if (address.startsWith("/eos/out/pending/cue")) {
@@ -334,8 +367,38 @@ export class EosListener extends EventEmitter {
         label: base.label,
         upTimeDurationMs: typeof args[3] === "number" ? args[3] : undefined,
         upTimeDelayMs: typeof args[4] === "number" ? args[4] : undefined,
+        downTimeDurationMs: typeof args[5] === "number" && args[5] >= 0 ? args[5] : undefined,
+        downTimeDelayMs: typeof args[6] === "number" && args[6] >= 0 ? args[6] : undefined,
+        focusTimeDurationMs: typeof args[7] === "number" && args[7] >= 0 ? args[7] : undefined,
+        colorTimeDurationMs: typeof args[8] === "number" && args[8] >= 0 ? args[8] : undefined,
+        beamTimeDurationMs: typeof args[9] === "number" && args[9] >= 0 ? args[9] : undefined,
+        blocked: typeof args[13] === "boolean" ? args[13] : undefined,
+        followHang: args[14] !== undefined ? String(args[14]) : undefined,
         partCount: typeof args[26] === "number" ? args[26] : undefined,
         notes: args[27] !== undefined ? String(args[27]) : undefined,
+        scene: args[28] !== undefined ? String(args[28]) : undefined,
+        raw: args,
+      };
+      return;
+    }
+
+    const patchMatch = address.match(/^\/eos\/out\/get\/patch\/(\d+)\/(\d+)\/list\/0$/);
+    if (patchMatch) {
+      const channel = Number(patchMatch[1]);
+      const part = Number(patchMatch[2]);
+      const base = parseBaseRecordTarget(args);
+      this.state.patch[patchKey(channel, part)] = {
+        channel,
+        part,
+        uid: base.uid,
+        label: base.label,
+        manufacturer: args[3] !== undefined ? String(args[3]) : undefined,
+        fixtureType: args[4] !== undefined ? String(args[4]) : undefined,
+        address: typeof args[5] === "number" ? args[5] : undefined,
+        intensityAddress: typeof args[6] === "number" ? args[6] : undefined,
+        currentLevel: typeof args[7] === "number" ? args[7] : undefined,
+        gel: args[8] !== undefined ? String(args[8]) : undefined,
+        endAddress: typeof args[19] === "number" ? args[19] : undefined,
         raw: args,
       };
       return;

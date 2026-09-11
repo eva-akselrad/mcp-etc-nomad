@@ -105,6 +105,27 @@ export function registerShowResources(server: McpServer, ctx: EosContext): void 
   );
 
   server.registerResource(
+    "show-patch",
+    "eos://show/patch",
+    {
+      title: "Show patch",
+      description: "Cached patch channels (sync via sync_show_targets patch=true)",
+      mimeType: "application/json",
+    },
+    async (uri) => {
+      const state = ctx.listener.getState();
+      const payload = {
+        patch: Object.values(state.patch),
+        count: Object.keys(state.patch).length,
+        lastSyncedAt: state.syncStatus.patchAt ?? state.lastSyncedAt,
+      };
+      return {
+        contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(payload, null, 2) }],
+      };
+    }
+  );
+
+  server.registerResource(
     "show-presets",
     "eos://show/presets",
     {

@@ -201,31 +201,62 @@ export function registerFaderTools(server: McpServer, ctx: EosContext): void {
     }
   );
 
+  const subBumpFields = {
+    sub: z.number().int().positive(),
+    edge: z.enum(["down", "up", "tap"]).optional(),
+    ...liveWriteFields,
+  };
+
+  const subBumpHandler = async ({
+    sub,
+    edge,
+    confirm,
+    allow_live,
+  }: {
+    sub: number;
+    edge?: "down" | "up" | "tap";
+    confirm?: boolean;
+    allow_live?: boolean;
+  }) => {
+    const blocked = gateLiveWrite(ctx, { confirm, allow_live });
+    if (blocked) return blocked;
+
+    const address = subFire(sub);
+    await sendButton(ctx, address, edge);
+    return jsonResult({
+      ok: true,
+      action: "submaster_bump",
+      address,
+      sub,
+      edge: edge ?? "tap",
+    });
+  };
+
+  server.registerTool(
+    "submaster_bump",
+    {
+      description:
+        "Bump a submaster (OSC button edge on /eos/sub/{n}). edge=down holds bump; edge=up releases; tap (default) press+release. Set level with submaster_set_level first if needed.",
+      inputSchema: z.object(subBumpFields),
+      annotations: { destructiveHint: true },
+    },
+    subBumpHandler
+  );
+
   server.registerTool(
     "submaster_fire",
     {
-      description:
-        "Bump a submaster via /eos/sub/{n}/fire (button edge 1.0/0.0 only). edge=down holds bump; edge=up releases; tap (default) press+release. Set intensity with submaster_set_level first if needed.",
-      inputSchema: z.object({
-        sub: z.number().int().positive(),
-        edge: z.enum(["down", "up", "tap"]).optional(),
-        ...liveWriteFields,
-      }),
+      description: "Bump a submaster (legacy alias of submaster_bump).",
+      inputSchema: z.object(subBumpFields),
       annotations: { destructiveHint: true },
     },
-    async ({ sub, edge, confirm, allow_live }) => {
-      const blocked = gateLiveWrite(ctx, { confirm, allow_live });
-      if (blocked) return blocked;
-
-      const address = subFire(sub);
-      await sendButton(ctx, address, edge);
-      return jsonResult({
-        ok: true,
-        action: "submaster_fire",
-        address,
-        sub,
-        edge: edge ?? "tap",
-      });
+    async (args) => {
+      const result = await subBumpHandler(args);
+      if (result.isError) return result;
+      const body = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+      body.action = "submaster_fire";
+      body.canonicalAction = "submaster_bump";
+      return jsonResult(body);
     }
   );
 
