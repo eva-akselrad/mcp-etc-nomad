@@ -4,64 +4,137 @@ export type ShowSaveMode = "quick" | "save" | "save_as";
 
 export type ShowExportTarget =
   | "patch"
-  | "cue"
-  | "group"
-  | "show"
   | "csv"
   | "ascii"
   | "lightwright"
-  | "logs";
+  | "logs"
+  | "show";
 
-/** Save current show — quick uses Save CLI; save_as includes optional name/path. */
-export function buildSaveShowCommand(options: {
+/** Browser/key workflow steps — no invented file paths or OSC Save/Load verbs. */
+export type ShowWorkflowSteps = BuiltProgrammingSteps & {
+  /** Uses OSC keys instead of /eos/newcmd when set. */
+  keys?: string[];
+};
+
+const DOMAIN_NOTES = [
+  "No OSC Save/Load verbs — Browser + key_press + CLI only.",
+  "Never invent USB/esf paths; user picks files in the Browser CIA.",
+  "Pin EOS_VERSION (.esf vs .esf3d) for syntax/version checks.",
+];
+
+/**
+ * Save via keys/CLI — no path parameters.
+ * quick: Shift+Update (save_show key sequence).
+ * save: Save CLI (may need confirm_save second Enter).
+ * save_as: open_browser → save_file (CIA naming in Browser).
+ */
+export function buildSaveShowWorkflow(options: {
   mode?: ShowSaveMode;
-  name?: string;
-  path?: string;
-}): string | BuiltProgrammingSteps {
+  confirmSave?: boolean;
+}): ShowWorkflowSteps {
   const mode = options.mode ?? "quick";
 
   if (mode === "quick") {
-    return "Save";
+    return {
+      style: "two_step",
+      keys: ["shift", "update"],
+      steps: [],
+      notes: [
+        ...DOMAIN_NOTES,
+        "Quick Save = Shift+Update hardkey sequence (not a path-based CLI).",
+        ...(options.confirmSave ? ["Second confirm Enter sent after save keys."] : []),
+      ],
+    };
   }
 
-  if (options.path) {
-    return `Save Show ${JSON.stringify(options.path)}`;
+  if (mode === "save_as") {
+    return {
+      style: "two_step",
+      keys: ["open_browser", "save_file"],
+      steps: [],
+      notes: [
+        ...DOMAIN_NOTES,
+        "Save As opens Browser — user names file and picks location in CIA.",
+        "Save As often needs a second Enter on the desk confirm dialog.",
+      ],
+    };
   }
 
-  if (options.name) {
-    return `Save Show ${JSON.stringify(options.name)}`;
+  const steps = ["Save"];
+  if (options.confirmSave) {
+    steps.push("");
   }
 
-  return "Save Show";
+  return {
+    style: steps.length > 1 ? "two_step" : "one_shot",
+    steps,
+    notes: [
+      ...DOMAIN_NOTES,
+      "Save may prompt on desk — use confirm_save for second Enter.",
+      "Echo saved path from /eos/out/event/show/saved or get_show_path.",
+    ],
+  };
 }
 
-/** Load/open a show file by path (version-sensitive; paths vary by platform). */
-export function buildLoadShowCommand(options: { path: string }): string {
-  return `Open Show ${JSON.stringify(options.path)}`;
+/** Open Browser load wizard — user selects show file manually. */
+export function buildLoadShowWorkflow(): ShowWorkflowSteps {
+  return {
+    style: "two_step",
+    keys: ["open_browser", "open_file"],
+    steps: [],
+    notes: [
+      ...DOMAIN_NOTES,
+      "Load is Browser File > Open — no CLI path argument.",
+      "Prefer Blind/offline. Never auto-load; requires explicit user_intent.",
+      "After load completes, run sync_show_targets — cache is stale.",
+      "Do not send /eos/reset as part of load.",
+    ],
+  };
 }
 
-/** Merge another show file into the current show. */
-export function buildMergeShowCommand(options: { path: string }): string {
-  return `Merge Show ${JSON.stringify(options.path)}`;
+/** Open Browser merge wizard — partial merge needs {Advanced} in CIA. */
+export function buildMergeShowWorkflow(): ShowWorkflowSteps {
+  return {
+    style: "two_step",
+    keys: ["open_browser"],
+    steps: ["Merge"],
+    notes: [
+      ...DOMAIN_NOTES,
+      "Merge is Browser File > Merge — user selects source show in CIA.",
+      "Partial components need Browser {Advanced}; manual step required.",
+      "Prefer Blind/offline. After merge, run sync_show_targets.",
+    ],
+  };
 }
 
-/**
- * Export show data to a file path.
- * Example from PLAN: Export Patch "usb1:/patch.csv" Enter
- */
-export function buildExportShowCommand(options: {
+/** Export targets that require Browser wizard (no pure CLI / no /eos/export). */
+export function exportManualInstructions(target: ShowExportTarget): {
+  manualStepRequired: true;
   target: ShowExportTarget;
-  path: string;
-}): string {
-  const label =
-    options.target === "csv"
-      ? "CSV"
-      : options.target === "ascii"
-        ? "ASCII"
-        : options.target === "lightwright"
-          ? "Lightwright"
-          : options.target.charAt(0).toUpperCase() + options.target.slice(1);
-  return `Export ${label} ${JSON.stringify(options.path)}`;
+  browserPath: string;
+  keys: string[];
+  notes: string[];
+} {
+  const browserPaths: Record<ShowExportTarget, string> = {
+    patch: "Browser > File > Export > CSV (select Patch columns)",
+    csv: "Browser > File > Export > CSV",
+    ascii: "Browser > File > Export > ASCII",
+    lightwright: "Browser > File > Export (Lightwright-compatible)",
+    logs: "Browser > File > Export > Logs",
+    show: "Browser > File > Export",
+  };
+
+  return {
+    manualStepRequired: true,
+    target,
+    browserPath: browserPaths[target],
+    keys: ["open_browser", "export_folder"],
+    notes: [
+      ...DOMAIN_NOTES,
+      "Export is a Browser wizard on most Eos versions — no /eos/export OSC verb.",
+      "User selects destination and filename in CIA; do not invent usb1:/ paths.",
+    ],
+  };
 }
 
 /** Enter patch display before patch attach/detach syntax on a Live CLI. */
@@ -73,7 +146,6 @@ export function buildPatchDisplayStep(): BuiltProgrammingSteps {
   };
 }
 
-/** Attach discovered dimmer/RDM device to patched channel (patch display). */
 export function buildAttachDeviceCommand(options: {
   channel: number;
   thru?: number;
@@ -84,7 +156,6 @@ export function buildAttachDeviceCommand(options: {
   return `Channel ${options.channel} Attach`;
 }
 
-/** Detach dimmer/RDM device from patched channel. */
 export function buildDetachDeviceCommand(options: {
   channel: number;
   thru?: number;
@@ -95,7 +166,6 @@ export function buildDetachDeviceCommand(options: {
   return `Channel ${options.channel} Detach`;
 }
 
-/** Channel check: step through patched channels at a level (ChanCheck softkey). */
 export function buildChannelCheckCommand(options: {
   channel: number;
   level?: number;
@@ -104,7 +174,6 @@ export function buildChannelCheckCommand(options: {
   return `Channel ${options.channel} At ${level} Check`;
 }
 
-/** Highlight selected channels (Highlight softkey / Shift+High). */
 export function buildHighlightCommand(options: {
   channel?: number;
   thru?: number;
@@ -113,7 +182,7 @@ export function buildHighlightCommand(options: {
   if (options.group !== undefined) {
     return `Group ${options.group} Highlight`;
   }
-  if (options.thru !== undefined) {
+  if (options.thru !== undefined && options.channel !== undefined) {
     return `Channel ${options.channel} Thru ${options.thru} Highlight`;
   }
   if (options.channel !== undefined) {
@@ -122,7 +191,6 @@ export function buildHighlightCommand(options: {
   return "Highlight";
 }
 
-/** Identify fixture lamps (Test Fixture / TEST_LAMP key after channel selection). */
 export function buildIdentifyFixtureSteps(options: {
   channel?: number;
   thru?: number;
@@ -144,6 +212,7 @@ export function buildIdentifyFixtureSteps(options: {
     notes: [
       "Test Fixture (OSC key test_fixture) flashes lamps on selected channels.",
       "RDM identify in Device List uses Flash softkey — GUI step may be required.",
+      "For session/console identity use get_session_info (/eos/get/processors, userlist).",
     ],
   };
 }

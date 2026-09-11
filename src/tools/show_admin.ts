@@ -1,51 +1,85 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
+import { keyPress } from "../eos/addresses.js";
 import { buildCommand } from "../eos/command.js";
 import type { EosContext } from "../eos/context.js";
+import { normalizeOscKey } from "../eos/keys.js";
 import { asProgrammingSteps } from "../eos/programming.js";
 import {
   buildAttachDeviceCommand,
   buildChannelCheckCommand,
   buildDetachDeviceCommand,
-  buildExportShowCommand,
   buildHighlightCommand,
   buildIdentifyFixtureSteps,
-  buildLoadShowCommand,
-  buildMergeShowCommand,
+  buildLoadShowWorkflow,
+  buildMergeShowWorkflow,
   buildPatchDisplayStep,
-  buildSaveShowCommand,
+  buildSaveShowWorkflow,
+  exportManualInstructions,
   type ShowExportTarget,
   type ShowSaveMode,
+  type ShowWorkflowSteps,
 } from "../eos/show-admin.js";
+import { syncShowTargets } from "../eos/sync.js";
 import {
   gateDestructiveWrite,
   gateLiveWrite,
+  gateLoadMerge,
+  gateShowSave,
   gateSystemWrite,
   jsonResult,
   liveWriteFields,
+  sendButton,
+  showSaveFields,
   systemWriteFields,
 } from "./helpers.js";
 
-const exportTargetSchema = z.enum([
-  "patch",
-  "cue",
-  "group",
-  "show",
-  "csv",
-  "ascii",
-  "lightwright",
-  "logs",
-]);
+const exportTargetSchema = z.enum(["patch", "csv", "ascii", "lightwright", "logs", "show"]);
 
-async function sendAdminCommand(
+async function sendWorkflowKeys(ctx: EosContext, keys: string[]): Promise<string[]> {
+  const sent: string[] = [];
+  for (const raw of keys) {
+    if (raw === "shift") {
+      await sendButton(ctx, keyPress(normalizeOscKey("shift")), "down");
+      sent.push("/eos/key/shift (down)");
+      continue;
+    }
+    if (raw === "update") {
+      await sendButton(ctx, keyPress(normalizeOscKey("shift")), "down");
+      await sendButton(ctx, keyPress(normalizeOscKey("update")), "tap");
+      await sendButton(ctx, keyPress(normalizeOscKey("shift")), "up");
+      sent.push("/eos/key/shift+update (quick save)");
+      continue;
+    }
+    const address = keyPress(normalizeOscKey(raw));
+    await sendButton(ctx, address);
+    sent.push(address);
+  }
+  return sent;
+}
+
+async function runShowWorkflow(
   ctx: EosContext,
-  built: string | ReturnType<typeof buildSaveShowCommand>,
-  options: { waitForShowEventMs?: number }
+  workflow: ShowWorkflowSteps,
+  options: {
+    waitForShowEventMs?: number;
+    refreshAfterShowEvent?: boolean;
+    manualStepRequired?: boolean;
+  } = {}
 ): Promise<ReturnType<typeof jsonResult>> {
-  const { steps, notes } = asProgrammingSteps(built);
+  const { steps, notes, keys } = workflow;
   const sent: string[] = [];
 
+  if (keys?.length) {
+    sent.push(...(await sendWorkflowKeys(ctx, keys)));
+  }
+
   for (const step of steps) {
+    if (step === "") {
+      await ctx.client.send("/eos/newcmd", buildCommand("", "enter").text);
+      sent.push("Enter (confirm)");
+      continue;
+    }
     const cmd = buildCommand(step, "enter");
     await ctx.client.send("/eos/newcmd", cmd.text);
     sent.push(cmd.text);
@@ -60,21 +94,60 @@ async function sendAdminCommand(
     }
   }
 
+  let refresh: Awaited<ReturnType<typeof syncShowTargets>> | undefined;
+  if (options.refreshAfterShowEvent && showEvent) {
+    try {
+      refresh = await syncShowTargets(ctx.client, ctx.listener, {
+        groups: true,
+        cueLists: true,
+        presets: true,
+        palettes: true,
+        subscribe: true,
+        timeoutMs: 10000,
+      });
+    } catch {
+      refresh = undefined;
+    }
+  }
+
+  let echoedPath: string | undefined;
+  if (showEvent?.args[0] !== undefined) {
+    echoedPath = String(showEvent.args[0]);
+  } else {
+    try {
+      await ctx.client.send("/eos/get/show/path");
+      const pathMsg = await ctx.listener.waitFor(/^\/eos\/out\/get\/show\/path$/, 2000);
+      echoedPath = pathMsg.args[0] !== undefined ? String(pathMsg.args[0]) : undefined;
+    } catch {
+      echoedPath = ctx.listener.getState().showPath;
+    }
+  }
+
   return jsonResult({
     ok: true,
     action: "show_admin",
-    path: "/eos/newcmd",
+    manualStepRequired: options.manualStepRequired ?? false,
     sent,
+    echoedPath,
     notes: [
       ...(notes ?? []),
-      "Show file syntax is version-sensitive — pin EOS_VERSION and verify on your desk.",
-      "Advanced merge/export wizards may still need Browser steps on some Eos versions.",
-      showEvent ? "Received /eos/out/event/show confirmation." : undefined,
+      "No OSC Save/Load verbs — Browser/key_press/CLI only. Never invent file paths.",
+      refresh
+        ? "Ran sync_show_targets after show event — reconfigure fader/cue-list banks before trusting labels."
+        : options.manualStepRequired
+          ? "Complete file selection in Browser CIA, then sync_show_targets."
+          : undefined,
     ].filter(Boolean),
-    showEvent,
+    showEvent: showEvent
+      ? { address: showEvent.address, args: showEvent.args }
+      : undefined,
+    refresh,
     eosVersion: ctx.config.eosVersion,
     protocol: ctx.config.protocol,
-    tcpPort: ctx.config.protocol === "tcp" ? ctx.config.tcpPort : undefined,
+    transportNote:
+      ctx.config.protocol === "tcp"
+        ? `TCP ${ctx.config.tcpPort} (${ctx.config.tcpMode}) — bidirectional; /eos/out/* on same socket. Not UDP ${ctx.config.portTx}/${ctx.config.portRx}.`
+        : `UDP TX→${ctx.config.portTx} RX←${ctx.config.portRx}`,
   });
 }
 
@@ -83,48 +156,51 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
     "show_save",
     {
       description:
-        "Save the current show via CLI (/eos/newcmd). quick=Save; save_as accepts name or path. Pin EOS_VERSION.",
+        "Save via keys/CLI only (no paths). quick=Shift+Update; save=Save CLI; save_as=Browser. Needs confirm_save.",
       inputSchema: z.object({
         mode: z.enum(["quick", "save", "save_as"]).optional(),
-        name: z.string().optional(),
-        path: z.string().optional(),
         wait_for_event_ms: z.number().int().positive().max(60000).optional(),
         ...liveWriteFields,
         ...systemWriteFields,
+        ...showSaveFields,
       }),
       annotations: { destructiveHint: true },
     },
     async (args) => {
-      const blocked = gateSystemWrite(ctx, args);
+      const blocked = gateShowSave(ctx, args);
       if (blocked) return blocked;
 
-      const built = buildSaveShowCommand({
+      const workflow = buildSaveShowWorkflow({
         mode: args.mode as ShowSaveMode | undefined,
-        name: args.name,
-        path: args.path,
+        confirmSave: args.confirm_save,
       });
-      return sendAdminCommand(ctx, built, { waitForShowEventMs: args.wait_for_event_ms });
+      return runShowWorkflow(ctx, workflow, {
+        waitForShowEventMs: args.wait_for_event_ms ?? 10000,
+      });
     }
   );
 
   server.registerTool(
     "show_load",
     {
-      description: 'Load/open a show file: Open Show "path". Destructive — prefer Blind. EOS_VERSION-sensitive.',
+      description:
+        "Open Browser load wizard (open_browser + open_file). User picks show — never auto-load. Prefer Blind.",
       inputSchema: z.object({
-        path: z.string(),
-        wait_for_event_ms: z.number().int().positive().max(60000).optional(),
+        wait_for_event_ms: z.number().int().positive().max(120000).optional(),
+        refresh_after_event: z.boolean().optional(),
         ...liveWriteFields,
         ...systemWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
     async (args) => {
-      const blocked = gateSystemWrite(ctx, args);
+      const blocked = gateLoadMerge(ctx, args);
       if (blocked) return blocked;
 
-      return sendAdminCommand(ctx, buildLoadShowCommand({ path: args.path }), {
-        waitForShowEventMs: args.wait_for_event_ms ?? 15000,
+      return runShowWorkflow(ctx, buildLoadShowWorkflow(), {
+        manualStepRequired: true,
+        waitForShowEventMs: args.wait_for_event_ms,
+        refreshAfterShowEvent: args.refresh_after_event ?? true,
       });
     }
   );
@@ -133,21 +209,23 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
     "show_merge",
     {
       description:
-        'Merge another show: Merge Show "path". Partial merge UI may need Browser {Advanced}. Prefer Blind.',
+        "Open Browser merge flow. User selects source show; partial merge needs {Advanced}. Prefer Blind.",
       inputSchema: z.object({
-        path: z.string(),
-        wait_for_event_ms: z.number().int().positive().max(60000).optional(),
+        wait_for_event_ms: z.number().int().positive().max(120000).optional(),
+        refresh_after_event: z.boolean().optional(),
         ...liveWriteFields,
         ...systemWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
     async (args) => {
-      const blocked = gateSystemWrite(ctx, args);
+      const blocked = gateLoadMerge(ctx, args);
       if (blocked) return blocked;
 
-      return sendAdminCommand(ctx, buildMergeShowCommand({ path: args.path }), {
-        waitForShowEventMs: args.wait_for_event_ms ?? 15000,
+      return runShowWorkflow(ctx, buildMergeShowWorkflow(), {
+        manualStepRequired: true,
+        waitForShowEventMs: args.wait_for_event_ms,
+        refreshAfterShowEvent: args.refresh_after_event ?? true,
       });
     }
   );
@@ -156,10 +234,13 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
     "show_export",
     {
       description:
-        'Export show data via CLI, e.g. Export Patch "usb1:/patch.csv". Target + path required.',
+        "Export via Browser wizard only — returns manualStepRequired. No /eos/export OSC or invented paths.",
       inputSchema: z.object({
         target: exportTargetSchema,
-        path: z.string(),
+        open_browser: z
+          .boolean()
+          .optional()
+          .describe("When true, press open_browser + export_folder keys to start wizard."),
         ...liveWriteFields,
         ...systemWriteFields,
       }),
@@ -169,14 +250,50 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
       const blocked = gateSystemWrite(ctx, args);
       if (blocked) return blocked;
 
-      return sendAdminCommand(
-        ctx,
-        buildExportShowCommand({
-          target: args.target as ShowExportTarget,
-          path: args.path,
-        }),
-        {}
-      );
+      const manual = exportManualInstructions(args.target as ShowExportTarget);
+      const sent: string[] = [];
+
+      if (args.open_browser) {
+        sent.push(...(await sendWorkflowKeys(ctx, manual.keys)));
+      }
+
+      return jsonResult({
+        ok: true,
+        action: "show_export",
+        manualStepRequired: true,
+        target: manual.target,
+        browserPath: manual.browserPath,
+        sent,
+        notes: manual.notes,
+        eosVersion: ctx.config.eosVersion,
+      });
+    }
+  );
+
+  server.registerTool(
+    "get_show_path",
+    {
+      description: "Query cached or live show path via /eos/get/show/path (no invented paths).",
+      inputSchema: z.object({
+        timeoutMs: z.number().int().positive().max(30000).optional(),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ timeoutMs }) => {
+      await ctx.client.send("/eos/get/show/path");
+      let path: string | undefined;
+      try {
+        const msg = await ctx.listener.waitFor(/^\/eos\/out\/get\/show\/path$/, timeoutMs ?? 3000);
+        path = msg.args[0] !== undefined ? String(msg.args[0]) : undefined;
+      } catch {
+        path = ctx.listener.getState().showPath;
+      }
+      return jsonResult({
+        ok: true,
+        path,
+        eosVersion: ctx.config.eosVersion,
+        lastShowEvent: ctx.listener.getState().showFile,
+      });
     }
   );
 
@@ -200,7 +317,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
       const built = args.enter_patch_display
         ? { style: "two_step" as const, steps: [...buildPatchDisplayStep().steps, line] }
         : line;
-      return sendAdminCommand(ctx, built, {});
+      return runShowWorkflow(ctx, asProgrammingSteps(built));
     }
   );
 
@@ -225,7 +342,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
       const built = args.enter_patch_display
         ? { style: "two_step" as const, steps: [...buildPatchDisplayStep().steps, line] }
         : line;
-      return sendAdminCommand(ctx, built, {});
+      return runShowWorkflow(ctx, asProgrammingSteps(built));
     }
   );
 
@@ -243,7 +360,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
       const blocked = gateLiveWrite(ctx, args);
       if (blocked) return blocked;
 
-      return sendAdminCommand(ctx, buildChannelCheckCommand(args), {});
+      return runShowWorkflow(ctx, asProgrammingSteps(buildChannelCheckCommand(args)));
     }
   );
 
@@ -262,7 +379,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
       const blocked = gateLiveWrite(ctx, args);
       if (blocked) return blocked;
 
-      return sendAdminCommand(ctx, buildHighlightCommand(args), {});
+      return runShowWorkflow(ctx, asProgrammingSteps(buildHighlightCommand(args)));
     }
   );
 
@@ -270,7 +387,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
     "identify_fixture",
     {
       description:
-        "Identify fixtures via Test Fixture key (test_fixture) after channel/group selection. Prefer Blind.",
+        "Identify fixtures via Test Fixture key after channel/group select. Session identity: get_session_info.",
       inputSchema: z.object({
         channel: z.number().int().positive().optional(),
         thru: z.number().int().positive().optional(),
@@ -282,7 +399,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
       const blocked = gateLiveWrite(ctx, args);
       if (blocked) return blocked;
 
-      return sendAdminCommand(ctx, buildIdentifyFixtureSteps(args), {});
+      return runShowWorkflow(ctx, buildIdentifyFixtureSteps(args));
     }
   );
 }

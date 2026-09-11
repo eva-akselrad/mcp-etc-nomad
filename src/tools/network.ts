@@ -1,63 +1,95 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
-import { buildCommand } from "../eos/command.js";
-import type { EosContext } from "../eos/context.js";
 import { keyPress } from "../eos/addresses.js";
+import type { EosContext } from "../eos/context.js";
 import { normalizeOscKey } from "../eos/keys.js";
-import { gateSystemWrite, jsonResult, liveWriteFields, sendButton, systemWriteFields } from "./helpers.js";
+import {
+  gateSystemWrite,
+  jsonResult,
+  liveWriteFields,
+  sendButton,
+  systemWriteFields,
+} from "./helpers.js";
+
+async function waitForGetReply(
+  ctx: EosContext,
+  pattern: RegExp,
+  timeoutMs: number
+): Promise<{ address: string; args: unknown[] } | null> {
+  try {
+    return await ctx.listener.waitFor(pattern, timeoutMs);
+  } catch {
+    return null;
+  }
+}
 
 export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
     "get_session_info",
     {
       description:
-        "Query multi-console session + show path via /eos/get/session and /eos/get/show/path (OSC cache).",
+        "Session/console identity via /eos/get/processors, userlist, show/path, version. EOS_HOST must be session Host.",
       inputSchema: z.object({
         timeoutMs: z.number().int().positive().max(30000).optional(),
       }),
       annotations: { readOnlyHint: true },
     },
     async ({ timeoutMs }) => {
-      await ctx.client.send("/eos/get/session");
+      const waitMs = timeoutMs ?? 3000;
+
+      await ctx.client.send("/eos/get/processors");
+      await ctx.client.send("/eos/get/userlist");
       await ctx.client.send("/eos/get/show/path");
       await ctx.client.send("/eos/get/version");
+      await ctx.client.send("/eos/get/session");
 
-      const waitMs = timeoutMs ?? 3000;
-      const results: Record<string, unknown> = {};
-
-      try {
-        results.session = await ctx.listener.waitFor(/^\/eos\/out\/get\/session$/, waitMs);
-      } catch {
-        results.session = null;
-      }
-
-      try {
-        results.showPath = await ctx.listener.waitFor(/^\/eos\/out\/get\/show\/path$/, waitMs);
-      } catch {
-        results.showPath = null;
-      }
-
-      try {
-        results.version = await ctx.listener.waitFor(/^\/eos\/out\/get\/version$/, waitMs);
-      } catch {
-        results.version = null;
-      }
+      const replies = {
+        processors: await waitForGetReply(ctx, /^\/eos\/out\/get\/processors$/, waitMs),
+        userlist: await waitForGetReply(ctx, /^\/eos\/out\/get\/userlist$/, waitMs),
+        showPath: await waitForGetReply(ctx, /^\/eos\/out\/get\/show\/path$/, waitMs),
+        version: await waitForGetReply(ctx, /^\/eos\/out\/get\/version$/, waitMs),
+        session: await waitForGetReply(ctx, /^\/eos\/out\/get\/session$/, waitMs),
+      };
 
       const state = ctx.listener.getState();
+      const warnings: string[] = [
+        "OSC must target the session Host IP (EOS_HOST) — not backup/client consoles.",
+        "Offline Nomad is not a Client of a live session.",
+        "OSC user (EOS_USER_ID) ≠ console login; avoid user 0 for interactive Browser dialogs.",
+      ];
+
+      if (ctx.config.userId === 0) {
+        warnings.push("EOS_USER_ID=0 (background) — avoid for save/load Browser workflows.");
+      }
+
+      if (ctx.config.protocol === "tcp") {
+        warnings.push(
+          `TCP port ${ctx.config.tcpPort} (${ctx.config.tcpMode}) is bidirectional — /eos/out/* arrives on the same socket, not UDP ${ctx.config.portRx}. Firewall both directions.`
+        );
+      } else {
+        warnings.push(
+          `UDP: TX→console:${ctx.config.portTx}, MCP listens ${ctx.config.portRx}. Firewall both directions or state stays empty.`
+        );
+      }
+
       return jsonResult({
         ok: true,
         host: ctx.config.host,
+        oscUserId: ctx.config.userId,
         protocol: ctx.config.protocol,
         tcpPort: ctx.config.protocol === "tcp" ? ctx.config.tcpPort : undefined,
+        tcpMode: ctx.config.protocol === "tcp" ? ctx.config.tcpMode : undefined,
+        eosVersion: ctx.config.eosVersion,
         cached: {
           showPath: state.showPath,
           session: state.session,
           showFile: state.showFile,
         },
-        replies: results,
+        replies,
+        warnings,
         notes: [
-          "OSC must target the session Host in multi-console systems.",
-          "Role assignment (Primary/Backup/Client) is set in ECU Welcome Screen at boot.",
+          "Join/leave session roles are ECU Shell UI at boot — no session join OSC verb.",
+          "Use identify_fixture for lamp flash; processors/userlist for console identity.",
         ],
       });
     }
@@ -67,13 +99,12 @@ export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
     "network_session_join",
     {
       description:
-        "Join a multi-console session as client/backup mirror, or open mirror dialog. Full role join requires ECU at boot.",
+        "Open mirror dialog (Shell/Browser UI). Full Primary/Backup/Client join requires ECU at boot — not OSC.",
       inputSchema: z.object({
-        mode: z
-          .enum(["mirror_dialog", "mirror_host_index"])
+        open_mirror_dialog: z
+          .boolean()
           .optional()
-          .describe("mirror_dialog opens host list; mirror_host_index selects by list index (1-based)."),
-        host_index: z.number().int().positive().optional(),
+          .describe("When true (default), press open_mirror_dialog key to list Hosts."),
         ...liveWriteFields,
         ...systemWriteFields,
       }),
@@ -84,33 +115,22 @@ export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
       if (blocked) return blocked;
 
       const sent: string[] = [];
-
-      if (args.mode === "mirror_host_index" && args.host_index !== undefined) {
-        await ctx.client.send("/eos/newcmd", buildCommand("Displays", "enter").text);
-        sent.push("Displays Enter");
-        await sendButton(ctx, keyPress(normalizeOscKey("open_mirror_dialog")));
-        sent.push("/eos/key/open_mirror_dialog");
-        const digits = String(args.host_index).split("");
-        for (const digit of digits) {
-          await sendButton(ctx, keyPress(normalizeOscKey(digit)));
-          sent.push(`/eos/key/${digit}`);
-        }
-        await sendButton(ctx, keyPress(normalizeOscKey("enter")));
-        sent.push("/eos/key/enter");
-      } else {
-        await sendButton(ctx, keyPress(normalizeOscKey("open_mirror_dialog")));
-        sent.push("/eos/key/open_mirror_dialog");
+      if (args.open_mirror_dialog !== false) {
+        const address = keyPress(normalizeOscKey("open_mirror_dialog"));
+        await sendButton(ctx, address);
+        sent.push(address);
       }
 
       return jsonResult({
         ok: true,
         action: "network_session_join",
-        mode: args.mode ?? "mirror_dialog",
+        manualStepRequired: true,
         sent,
         notes: [
-          "Primary/Backup/Client role is chosen in ECU Welcome Screen (Browser > File > Exit Eos).",
-          "Mirror mode follows a Host; use get_session_info to verify connectivity.",
-          "Software versions must match across all session devices.",
+          "No session-join OSC verb — role is ECU Welcome Screen (Browser > File > Exit Eos).",
+          "Mirror dialog lists Hosts; user selects in CIA. Offline Nomad ≠ live Client.",
+          "Verify Host with get_session_info (/eos/get/processors, userlist).",
+          "EOS_HOST must be the session Host console IP.",
         ],
         eosVersion: ctx.config.eosVersion,
       });
@@ -121,9 +141,8 @@ export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
     "network_session_leave",
     {
       description:
-        "Leave mirror mode (Stop Mirroring) or detach from a mirrored session. Does not change ECU role.",
+        "Exit mirror mode (exit key). ECU role unchanged. Stop Mirroring softkey / ALT+F2 also works.",
       inputSchema: z.object({
-        mode: z.enum(["exit_mirror"]).optional(),
         ...liveWriteFields,
         ...systemWriteFields,
       }),
@@ -133,20 +152,18 @@ export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
       const blocked = gateSystemWrite(ctx, args);
       if (blocked) return blocked;
 
-      const sent: string[] = [];
-      await sendButton(ctx, keyPress(normalizeOscKey("exit")));
-      sent.push("/eos/key/exit");
+      const address = keyPress(normalizeOscKey("exit"));
+      await sendButton(ctx, address);
 
       return jsonResult({
         ok: true,
         action: "network_session_leave",
-        mode: args.mode ?? "exit_mirror",
-        sent,
+        manualStepRequired: true,
+        sent: [address],
         notes: [
-          "Stop Mirroring softkey / ALT+F2 also exits mirror mode (no documented OSC name).",
-          "Clients without a dongle cannot exit mirror mode.",
-          "ECU role (Primary/Backup/Client) requires reboot via ECU Welcome Screen.",
-          "Use detach_patch_device for dimmer/RDM detach in Patch — not this tool.",
+          "Stop Mirroring softkey / ALT+F2 exits mirror (no documented OSC name).",
+          "Leaving session role requires ECU reboot — not this tool.",
+          "detach_patch_device is for dimmer/RDM in Patch, not network leave.",
         ],
       });
     }

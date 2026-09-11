@@ -44,19 +44,35 @@ export type SystemWriteOptions = LiveWriteOptions & {
   user_intent?: string;
 };
 
+export type ShowSaveOptions = SystemWriteOptions & {
+  /** Second Enter / desk confirm for Save dialogs (Eos OSC domain). */
+  confirm_save?: boolean;
+};
+
+export type LoadMergeOptions = SystemWriteOptions;
+
 const systemWriteFields = {
   user_intent: z
     .string()
+    .min(1)
     .optional()
     .describe(
-      "Short description of why this system/show operation is being performed (required when EOS_REQUIRE_CONFIRM=true)."
+      "Required: short description of why this system/show operation is being performed."
     ),
 };
 
-export { systemWriteFields };
+const showSaveFields = {
+  confirm_save: z
+    .boolean()
+    .optional()
+    .describe(
+      "Required when EOS_REQUIRE_CONFIRM=true. Sends second Enter after Save (desk confirm dialog)."
+    ),
+};
 
-/** Destructive programming (delete) requires confirm_delete in addition to confirm. */
-/** System/show-file writes require confirm and an explicit user_intent string. */
+export { showSaveFields, systemWriteFields };
+
+/** System/show-file writes require confirm and user_intent when EOS_REQUIRE_CONFIRM=true. */
 export function gateSystemWrite(ctx: EosContext, options: SystemWriteOptions) {
   const live = gateLiveWrite(ctx, options);
   if (live) return live;
@@ -72,6 +88,55 @@ export function gateSystemWrite(ctx: EosContext, options: SystemWriteOptions) {
     );
   }
   return null;
+}
+
+/** Save operations need confirm_save for second Enter when gating is on. */
+export function gateShowSave(ctx: EosContext, options: ShowSaveOptions) {
+  const blocked = gateSystemWrite(ctx, options);
+  if (blocked) return blocked;
+
+  if (ctx.config.requireConfirm && !options.confirm_save) {
+    return jsonResult(
+      {
+        ok: false,
+        error:
+          "Pass confirm_save=true for save operations — desk often needs a second Enter (EOS_REQUIRE_CONFIRM=true).",
+      },
+      true
+    );
+  }
+  return null;
+}
+
+/**
+ * Load/merge always require user_intent and prefer Blind/offline.
+ * Never auto-load — opens Browser only.
+ */
+export function gateLoadMerge(ctx: EosContext, options: LoadMergeOptions) {
+  if (!options.user_intent?.trim()) {
+    return jsonResult(
+      {
+        ok: false,
+        error:
+          "Pass user_intent describing which show to load/merge. Load/merge is never automatic.",
+      },
+      true
+    );
+  }
+
+  const mode = ctx.listener.getState().consoleMode;
+  if ((mode === "live" || mode === "unknown") && !options.allow_live) {
+    return jsonResult(
+      {
+        ok: false,
+        error:
+          "Prefer Blind/offline for load/merge. Pass allow_live=true to open Browser while LIVE.",
+      },
+      true
+    );
+  }
+
+  return gateSystemWrite(ctx, options);
 }
 
 export function gateDestructiveWrite(ctx: EosContext, options: DestructiveWriteOptions) {

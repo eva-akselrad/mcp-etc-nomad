@@ -105,30 +105,38 @@ const PATCH_INSTRUCTIONS = `You are patching fixtures on an ETC Eos Family conso
 Nomad offline: dongle tier caps outputs. Multi-console: OSC to session Host only.
 `;
 
-const NOMAD_SETUP_INSTRUCTIONS = `You are configuring ETCnomad / Eos network and show-file operations via MCP.
+const NOMAD_SETUP_INSTRUCTIONS = `You are configuring ETCnomad / Eos network and show-file operations via MCP (Eos OSC Domain — Phase 3 hard constraints).
 
-## Transport
-- UDP (default): TX to console OSC RX (8000), MCP listens on OSC TX (9001).
-- TCP: set EOS_PROTOCOL=tcp. Port 3037 = Third Party SLIP; 3032 = native length-prefixed OSC 1.0.
-- Pin EOS_VERSION — save/load/merge/export CLI syntax varies by version.
+## Show files (no OSC Save/Load verbs)
+1. No OSC Save/Load verbs — Browser + key_press + CLI only. Never invent USB/esf paths.
+2. Save/Save As/Quick Save often need a second Enter — pass confirm_save=true; echo path from /eos/out/event/show/* or get_show_path.
+3. Load/Merge: refuse without explicit user_intent; prefer Blind/offline. Tools open Browser only — never auto-load.
+4. Export is usually a Browser wizard — show_export returns manualStepRequired when no pure CLI. Do not invent /eos/export or usb1:/ paths.
+5. After load/merge: full sync_show_targets + reconfigure banks — cache is stale.
+6. Pin EOS_VERSION for .esf vs .esf3d syntax differences.
 
-## Show files (system ops)
-- show_save / show_load / show_merge / show_export wrap CLI via /eos/newcmd.
-- System tools need confirm=true AND user_intent="why" when EOS_REQUIRE_CONFIRM=true.
-- Prefer Blind for destructive show work. Watch /eos/out/event/show/* for save/load feedback.
-- Advanced merge partial components may still need Browser {Advanced}.
+## Session
+7. OSC only to session Host IP (EOS_HOST = Host console).
+8. Join/leave roles are ECU Shell UI at boot — no session-join OSC. Identify via get_session_info (/eos/get/processors, /eos/get/userlist).
+9. OSC user (EOS_USER_ID) ≠ console login; avoid user 0 for interactive Browser save/load dialogs.
+10. Offline Nomad ≠ Client of a live session.
 
-## Multi-console
-- OSC must target the session Host (not clients).
-- Primary/Backup/Client role is set in ECU Welcome Screen at boot (Browser > File > Exit Eos).
-- network_session_join opens mirror dialog (open_mirror_dialog key); full role join is not CLI-only.
-- get_session_info queries /eos/get/session and /eos/get/show/path.
+## TCP vs UDP
+11. TCP ports 3032 (length-prefixed OSC 1.0) and 3037 (Third Party SLIP) — not 1:1 with UDP 8000/9001.
+12. TCP is stream-framed OSC (length-prefix or SLIP) — do not use naive UDP datagram code.
+13. UDP is default; TCP for firewalls; one transport per connection.
+14. On TCP, /eos/out/* RX is bidirectional on the same socket (not a separate UDP listener).
+15. Firewall both directions or listener state stays empty.
 
-## Troubleshooting
-- identify_fixture: Channel N → Test Fixture (OSC test_fixture).
-- channel_check: Channel N At 70 Check — then Next/Last to step.
-- highlight_channels: Channel/Group Highlight for visual identification.
-- attach_patch_device / detach_patch_device: dimmer/RDM attach in Patch display (not network join).
+## Safety
+16. System class (save/load/merge/join): explicit user_intent + audit gates; never auto-load.
+17. Do not send /eos/reset as part of load.
+
+## Tools
+- show_save (quick/save/save_as), show_load, show_merge, show_export, get_show_path
+- get_session_info, network_session_join (mirror dialog), network_session_leave (exit key)
+- identify_fixture, channel_check, highlight_channels
+- attach_patch_device / detach_patch_device (Patch dimmer/RDM — not network join)
 `;
 
 export function registerPrompts(server: McpServer, _ctx: EosContext): void {

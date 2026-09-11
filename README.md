@@ -61,16 +61,18 @@ Sync uses OSC `/eos/get/*` request/response (node-eos-console / EosSyncLib patte
 
 ## Phase 3 (show & system admin)
 
-System/show writes need `confirm=true` and `user_intent="why"` when `EOS_REQUIRE_CONFIRM=true`. Prefer Blind for save/load/merge.
+Eos OSC domain rules: **no OSC Save/Load verbs** — Browser + `key_press` + CLI only. Never invent `usb1:/` or `.esf` paths.
 
 | Group | Tools |
 |-------|--------|
-| Show files | `show_save`, `show_load`, `show_merge`, `show_export` (CLI via `/eos/newcmd`; pin `EOS_VERSION`) |
+| Show files | `show_save` (keys/CLI), `show_load`, `show_merge` (Browser wizards), `show_export` (manual step), `get_show_path` |
 | Patch extras | `attach_patch_device`, `detach_patch_device` |
 | Troubleshoot | `identify_fixture`, `channel_check`, `highlight_channels` |
-| Network | `get_session_info`, `network_session_join`, `network_session_leave` |
+| Network | `get_session_info` (processors/userlist), `network_session_join`, `network_session_leave` |
 
-**TCP transport:** set `EOS_PROTOCOL=tcp`. Default port `3037` uses SLIP (Third Party OSC); port `3032` uses OSC 1.0 length-prefixed framing. Override with `EOS_TCP_MODE=slip|length`.
+**Gates:** `user_intent` required for load/merge/join; `confirm_save` for save when `EOS_REQUIRE_CONFIRM=true`. Prefer Blind for load/merge. After load/merge, run `sync_show_targets` and reconfigure banks.
+
+**TCP transport:** set `EOS_PROTOCOL=tcp`. Port `3037` = SLIP (Third Party OSC); `3032` = length-prefixed OSC 1.0 — not 1:1 with UDP `8000`/`9001`. `/eos/out/*` RX is bidirectional on the same TCP socket. Firewall both directions.
 
 **Prompts:** `nomad-setup`
 
