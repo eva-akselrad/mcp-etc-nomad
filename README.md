@@ -160,6 +160,7 @@ npm test
 | `test/command.test.ts` | CLI Enter/`#`/none terminators |
 | `test/keys.test.ts` | OSC hardkey aliases (`go` → `go_0`, etc.) |
 | `test/cli-tools.test.ts` | `eos_command`, keys, palettes, macros, user prefix, mock CLI echo |
+| `test/lighting-expert.test.ts` | Lighting-ops pack: `go_to_cue` (CLI/XOR/`cueZero`), BO≠GM, `park_channel`, highlight/rem_dim/home selection, `set_cue_timing`, subs/GM 0–100 API |
 | `test/golden-replay.test.ts` | Anonymized `/eos/out/*` trace replay (PLAN §11.3) |
 | `test/programming.test.ts` | CLI programming builders (Copy/Delete Thru), tool TX, `sync_show_targets` mock-peer integration |
 | `test/show-admin.test.ts` | Show save/load/**merge**/export gates (`user_intent`, LIVE refuse, `confirm_path`, `needsManual`); **network_session_leave** `user_intent`; TCP framing |
@@ -175,9 +176,10 @@ Programming tools (`record_cue`, `update_cue`, etc.) refuse LIVE/unknown console
 **Nomad offline smoke (manual):** with ETCnomad running and OSC enabled (see above):
 
 1. **Playback / programming:** channel level, cue fire, group+cue record via CLI (`record_cue`), delete with `confirm_delete`
-2. **Show files (Browser):** `show_save` (quick save + path echo); `show_load` and `show_merge` with `user_intent` + `confirm_path` — complete the CIA Browser wizard on the desk (tools return `needsManual`; no auto-load/merge)
-3. **Network:** `network_session_leave` with `user_intent` — complete mirror exit on desk via Stop Mirroring softkey or ALT+F2 (tool returns `needsManual`; no OSC key TX)
-4. **Gates:** verify `show_merge` / `show_load` refuse LIVE without `allow_live`; `network_session_leave` requires `user_intent` when gating is on
+2. **Lighting-ops:** `go_to_cue` (CLI `Go To Cue N` via `/eos/newcmd` — not `/eos/key/go_0`); confirm **blackout** (`/eos/key/blackout`) is separate from **grandmaster_set_level(0)** (BO≠GM); `highlight` / `home` with channel selection (reject bare calls without selection)
+3. **Show files (Browser):** `show_save` (quick save + path echo); `show_load` and `show_merge` with `user_intent` + `confirm_path` — complete the CIA Browser wizard on the desk (tools return `needsManual`; no auto-load/merge)
+4. **Network:** `network_session_leave` with `user_intent` — complete mirror exit on desk via Stop Mirroring softkey or ALT+F2 (tool returns `needsManual`; no OSC key TX)
+5. **Gates:** verify `show_merge` / `show_load` refuse LIVE without `allow_live`; `network_session_leave` requires `user_intent` when gating is on
 
 Full checklist: PLAN.md §11.2.
 
