@@ -170,7 +170,7 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
   server.registerTool(
     "park_channel",
     {
-      description: "Park channels (alias of park).",
+      description: "Deprecated alias of park.",
       inputSchema: z.object(parkFields),
       annotations: { destructiveHint: true },
     },
@@ -242,7 +242,7 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
   server.registerTool(
     "unpark_channel",
     {
-      description: "Unpark channels (alias of unpark).",
+      description: "Deprecated alias of unpark.",
       inputSchema: z.object({
         ...channelSelectionFields,
         ...liveWriteFields,
@@ -423,7 +423,7 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
     "sneak",
     {
       description:
-        "Press [Sneak] via /eos/key/sneak after optional channel selection. Optional time prepends CLI Time before the key.",
+        "Press [Sneak] via /eos/key/sneak. Optional channels/ranges select programmer first; omit selection to use current selection (like make_manual). Optional time prepends CLI Time N.",
       inputSchema: z.object({
         time: timingValueSchema.optional().describe("Optional fade time before Sneak (CLI Time N)."),
         edge: z.enum(["down", "up", "tap"]).optional(),

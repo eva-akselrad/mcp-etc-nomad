@@ -9,8 +9,8 @@ Lighting Expert canonical API for the **lighting-ops** tool pack. OSC paths foll
 | `palette_recall` | `palette_fire` | Descriptions say **Recall**, not only "fire" |
 | `preset_recall` | `preset_fire` | Descriptions say **Recall**, not only "fire" |
 | `submaster_bump` | `submaster_fire` | Descriptions say **Bump**, not only "fire" |
-| `park` | `park_channel` | Shared channels/ranges selection; optional `level` (Park At) |
-| `unpark` | `unpark_channel` | Shared channels/ranges selection |
+| `park` | `park_channel` (deprecated) | Shared channels/ranges selection; optional `level` (Park At) |
+| `unpark` | `unpark_channel` (deprecated) | Shared channels/ranges selection |
 | `go_to_cue` | `cue_fire` | `cue_fire` = `go_to_cue` with `time=0` (Assert+GTC) — NOT `/eos/cue/.../fire` |
 
 **Blackout ≠ GM=0.** `blackout` and `grandmaster_set_level` are separate tools. Never implement BO as `grandmaster_set_level(0)`.
@@ -61,6 +61,13 @@ Thru extends `channel_select` and `channel_set_level`. Minus deselect uses `/_-%
 { state?: "on"|"off"|"toggle" }
 ```
 - `blackout` default `on` when omitted; `timing_disable` default `toggle`
+
+### `sneak`
+```ts
+{ channels?, ranges?, minus?, time?: number|string, edge?: "down"|"up"|"tap" }
+```
+- Optional channel selection before key; **omit selection = current programmer selection** (like `make_manual`)
+- Optional `time` prepends CLI `Time N`
 
 ### `home`
 - Requires selection: `channels`/`ranges`, `group`/`groups`, or `faderBank`+`fader`

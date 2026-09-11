@@ -286,6 +286,15 @@ describe("Lighting Expert priority pack", () => {
     );
   });
 
+  it("sneak without selection uses current programmer selection", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "sneak", { confirm: true });
+    const addresses = client.sent.map((m) => m.address);
+    assert.ok(addresses.every((a) => a === "/eos/key/sneak"));
+    assert.ok(!addresses.includes("/eos/chan"));
+  });
+
   it("make_manual with channel selection", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
