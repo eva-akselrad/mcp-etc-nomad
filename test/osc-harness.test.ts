@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { Client } from "node-osc";
 import {
+  channelDmx,
   cueFire,
   cueListBankPage,
   cueListBankSelect,
@@ -47,6 +48,8 @@ describe("address builders (Dictionary OSC paths)", () => {
     assert.equal(faderBankConfig(1, 10), "/eos/fader/1/config/10");
     assert.equal(directSelectBankCreate(2, "chan", 24), "/eos/ds/2/chan/24");
     assert.equal(faderLevel(1, 3), "/eos/fader/1/3");
+    assert.equal(channelDmx(42), "/eos/chan/42/dmx");
+    assert.doesNotMatch(channelDmx(42), /\/DMX$/);
   });
 });
 
@@ -192,6 +195,46 @@ describe("tool TX paths via recording client", () => {
       assert.equal(client.sent.at(-1)?.address, "/eos/fader/1/1");
       assert.equal(client.sent.at(-1)?.args[0], level);
     }
+  });
+
+  it("channel_set_dmx uses lowercase /eos/chan/{n}/dmx", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    const result = await invokeTool(server, "channel_set_dmx", {
+      channel: 10,
+      dmx: 128,
+      confirm: true,
+    });
+    assert.equal(isToolError(result), false);
+    assert.equal(client.sent.at(-1)?.address, "/eos/chan/10/dmx");
+    assert.equal(client.sent.at(-1)?.args[0], 128);
+  });
+
+  it("submaster_fire sends button edge 1.0/0.0 on /eos/sub/{n}/fire only", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "submaster_fire", { sub: 5, confirm: true, edge: "tap" });
+    const fireMsgs = client.sent.filter((m) => m.address === "/eos/sub/5/fire");
+    assert.equal(fireMsgs.length, 2);
+    assert.deepEqual(fireMsgs[0]?.args, [1.0]);
+    assert.deepEqual(fireMsgs[1]?.args, [0.0]);
+    assert.ok(
+      fireMsgs.every((m) => m.args[0] === 1.0 || m.args[0] === 0.0),
+      "fire address must only carry button edges, not intensity"
+    );
+    assert.equal(
+      client.sent.filter((m) => m.address === "/eos/sub/5").length,
+      0,
+      "intensity belongs on /eos/sub/{n}, not fire"
+    );
+  });
+
+  it("submaster_set_level sends intensity on /eos/sub/{n}", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "submaster_set_level", { sub: 5, level: 0.75, confirm: true });
+    assert.equal(client.sent.at(-1)?.address, "/eos/sub/5");
+    assert.equal(client.sent.at(-1)?.args[0], 0.75);
   });
 });
 

@@ -38,7 +38,7 @@ Playback checklist:
 - What's running? get_active_cue + get_pending_cues
 - Fire next: cue_go with confirm + allow_live
 - Jump: cue_fire cueList + cue
-- Subs: submaster_set_level (0–1) or submaster_fire (bump)
+- Subs: submaster_set_level (0–1) for intensity; submaster_fire for bump (edge only — set level first if needed)
 - Palettes: palette_fire type=cp|ip|fp|bp
 - Macros: macro_fire
 `;

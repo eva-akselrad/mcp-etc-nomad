@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
-import { atLevel, channelLevel, channelSelect, groupLevel } from "../eos/addresses.js";
+import { atLevel, channelDmx, channelLevel, channelSelect, groupLevel } from "../eos/addresses.js";
 import type { EosContext } from "../eos/context.js";
 import { gateLiveWrite, jsonResult, liveWriteFields } from "./helpers.js";
 
@@ -55,7 +55,7 @@ export function registerLevelTools(server: McpServer, ctx: EosContext): void {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
-      const address = `${channelLevel(channel)}/DMX`;
+      const address = channelDmx(channel);
       await ctx.client.send(address, dmx);
       return jsonResult({ ok: true, action: "channel_set_dmx", address, channel, dmx });
     }

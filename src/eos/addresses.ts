@@ -52,6 +52,10 @@ export function channelLevel(channel: number): string {
   return `/eos/chan/${channel}`;
 }
 
+export function channelDmx(channel: number): string {
+  return `/eos/chan/${channel}/dmx`;
+}
+
 export function channelSelect(): string {
   return "/eos/chan";
 }

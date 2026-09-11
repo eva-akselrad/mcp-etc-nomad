@@ -205,26 +205,27 @@ export function registerFaderTools(server: McpServer, ctx: EosContext): void {
     "submaster_fire",
     {
       description:
-        "Bump a submaster. edge=down holds bump; edge=up releases; tap (default) press+release. Optional level 0.0–1.0.",
+        "Bump a submaster via /eos/sub/{n}/fire (button edge 1.0/0.0 only). edge=down holds bump; edge=up releases; tap (default) press+release. Set intensity with submaster_set_level first if needed.",
       inputSchema: z.object({
         sub: z.number().int().positive(),
-        level: z.number().min(0).max(1).optional(),
         edge: z.enum(["down", "up", "tap"]).optional(),
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ sub, level, edge, confirm, allow_live }) => {
+    async ({ sub, edge, confirm, allow_live }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
       const address = subFire(sub);
-      if (level !== undefined) {
-        await ctx.client.send(address, level);
-      } else {
-        await sendButton(ctx, address, edge);
-      }
-      return jsonResult({ ok: true, action: "submaster_fire", address, sub, level, edge });
+      await sendButton(ctx, address, edge);
+      return jsonResult({
+        ok: true,
+        action: "submaster_fire",
+        address,
+        sub,
+        edge: edge ?? "tap",
+      });
     }
   );
 
