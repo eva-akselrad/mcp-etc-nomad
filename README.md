@@ -46,13 +46,14 @@ Programming writes use the same `confirm` / `allow_live` gates as playback. Dest
 
 | Group | Tools |
 |-------|--------|
-| Cue programming | `cue_record`, `cue_update`, `programming_copy`, `programming_move`, `programming_delete` |
-| Groups / labels | `group_record`, `target_label` (CLI or `/eos/set/.../label`) |
+| Record / update | `record_cue`, `update_cue`, `record_group`, `record_preset`, `record_palette` |
+| Copy / move / delete | `copy_target`, `move_target`, `delete_target` (+ `confirm_delete`) |
+| OSC set | `label_target`, `group_set_channels` (`/eos/set/...`; Thru as `>`) |
 | Patch | `patch_channel`, `patch_copy_to`, `patch_move`, `unpatch_channel` |
-| Sync / queries | `sync_show_targets`, `query_groups`, `query_cuelists`, `query_cues` |
-| Command line | `eos_command`, `eos_new_command` (typed tools prefer **newcmd**); `eos_event` is not interactive programming |
+| Sync / get | `sync_show_targets`, `get_groups`, `get_cuelists`, `get_cues`, `get_presets`, `get_palettes` |
+| Command line | `eos_command`, `eos_new_command` (typed tools use **newcmd**); no `/eos/record` verb |
 
-**Resources:** `eos://show/groups`, `eos://show/cuelists`, `eos://show/cues/{list}` (populate via `sync_show_targets`)
+**Resources:** `eos://show/groups`, `eos://show/cuelists`, `eos://show/cues/{list}`, `eos://show/presets`, `eos://show/palettes/{type}`
 
 **Prompts:** `eos-programmer`, `eos-patch`
 

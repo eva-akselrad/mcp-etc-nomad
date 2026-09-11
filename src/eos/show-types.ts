@@ -30,11 +30,51 @@ export interface CueState {
   raw?: unknown[];
 }
 
+export interface PresetState {
+  number: number;
+  uid?: string;
+  label?: string;
+  raw?: unknown[];
+}
+
+export interface PaletteState {
+  type: "ip" | "fp" | "cp" | "bp";
+  number: number;
+  uid?: string;
+  label?: string;
+  raw?: unknown[];
+}
+
 export interface SyncStatus {
   groupsAt?: string;
   cueListsAt?: string;
   cuesAt: Record<string, string>;
+  presetsAt?: string;
+  palettesAt: Record<string, string>;
   subscribed?: boolean;
+}
+
+export function paletteKey(type: string, number: number): string {
+  return `${type}/${number}`;
+}
+
+export function presetKey(number: number): string {
+  return String(number);
+}
+
+/** Format group channel string for /eos/set/group/{n}/chans — Thru as "from > thru". */
+export function formatGroupChannelsString(options: {
+  channels?: number[];
+  ranges?: Array<{ from: number; thru: number }>;
+}): string {
+  const parts: string[] = [];
+  for (const range of options.ranges ?? []) {
+    parts.push(`${range.from} > ${range.thru}`);
+  }
+  for (const channel of options.channels ?? []) {
+    parts.push(String(channel));
+  }
+  return parts.join(" ");
 }
 
 export function groupKey(number: number): string {

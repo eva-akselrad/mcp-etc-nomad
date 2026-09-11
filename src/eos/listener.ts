@@ -6,8 +6,10 @@ import {
   cueKey,
   cueListKey,
   groupKey,
+  paletteKey,
   parseBaseRecordTarget,
   parseOscNumberList,
+  presetKey,
 } from "./show-types.js";
 
 export interface OscMessage {
@@ -259,6 +261,34 @@ export class EosListener extends EventEmitter {
         upTimeDelayMs: typeof args[4] === "number" ? args[4] : undefined,
         partCount: typeof args[26] === "number" ? args[26] : undefined,
         notes: args[27] !== undefined ? String(args[27]) : undefined,
+        raw: args,
+      };
+      return;
+    }
+
+    const presetMatch = address.match(/^\/eos\/out\/get\/preset\/(\d+)\/list\/0$/);
+    if (presetMatch) {
+      const number = Number(presetMatch[1]);
+      const base = parseBaseRecordTarget(args);
+      this.state.presets[presetKey(number)] = {
+        number,
+        uid: base.uid,
+        label: base.label,
+        raw: args,
+      };
+      return;
+    }
+
+    const paletteMatch = address.match(/^\/eos\/out\/get\/(ip|fp|cp|bp)\/(\d+)\/list\/0$/);
+    if (paletteMatch) {
+      const type = paletteMatch[1] as "ip" | "fp" | "cp" | "bp";
+      const number = Number(paletteMatch[2]);
+      const base = parseBaseRecordTarget(args);
+      this.state.palettes[paletteKey(type, number)] = {
+        type,
+        number,
+        uid: base.uid,
+        label: base.label,
         raw: args,
       };
     }

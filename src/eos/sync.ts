@@ -5,17 +5,26 @@ import {
   getCueListIndex,
   getGroupCount,
   getGroupIndex,
+  getPaletteCount,
+  getPaletteIndex,
+  getPresetCount,
+  getPresetIndex,
   getSubscribe,
+  type PaletteType,
 } from "./addresses.js";
 import type { EosClient } from "./client.js";
 import type { EosListener } from "./listener.js";
-import type { CueListState, CueState, GroupState } from "./show-types.js";
-import { cueKey, cueListKey, groupKey, parseBaseRecordTarget } from "./show-types.js";
+import type { CueListState, CueState, GroupState, PresetState } from "./show-types.js";
+import { cueListKey, groupKey, parseBaseRecordTarget, presetKey } from "./show-types.js";
+
+const PALETTE_TYPES: PaletteType[] = ["ip", "fp", "cp", "bp"];
 
 export interface SyncOptions {
   groups?: boolean;
   cueLists?: boolean;
   cues?: number[];
+  presets?: boolean;
+  palettes?: boolean | PaletteType[];
   subscribe?: boolean;
   timeoutMs?: number;
 }
@@ -24,6 +33,8 @@ export interface SyncResult {
   groups: number;
   cueLists: number;
   cues: Record<string, number>;
+  presets: number;
+  palettes: Record<string, number>;
   subscribed: boolean;
   lastSyncedAt: string;
 }
@@ -40,11 +51,15 @@ export async function syncShowTargets(
   const syncGroups = options.groups ?? true;
   const syncCueLists = options.cueLists ?? true;
   const syncCues = options.cues ?? [];
+  const syncPresets = options.presets ?? true;
+  const syncPalettes = options.palettes ?? true;
   const subscribe = options.subscribe ?? true;
 
   let groupCount = 0;
   let cueListCount = 0;
+  let presetCount = 0;
   const cueCounts: Record<string, number> = {};
+  const paletteCounts: Record<string, number> = {};
 
   if (subscribe) {
     await client.send(getSubscribe(true));
@@ -67,6 +82,21 @@ export async function syncShowTargets(
     await sleep(INDEX_STEP_MS);
   }
 
+  if (syncPresets) {
+    presetCount = await syncPresetsFromConsole(client, listener, timeoutMs);
+  }
+
+  const paletteTypes =
+    syncPalettes === true
+      ? PALETTE_TYPES
+      : syncPalettes === false
+        ? []
+        : syncPalettes;
+  for (const type of paletteTypes) {
+    paletteCounts[type] = await syncPalettesOfType(client, listener, type, timeoutMs);
+    await sleep(INDEX_STEP_MS);
+  }
+
   const now = new Date().toISOString();
   listener.getState().lastSyncedAt = now;
 
@@ -74,6 +104,8 @@ export async function syncShowTargets(
     groups: groupCount,
     cueLists: cueListCount,
     cues: cueCounts,
+    presets: presetCount,
+    palettes: paletteCounts,
     subscribed: subscribe,
     lastSyncedAt: now,
   };
@@ -198,6 +230,56 @@ async function syncCuesForList(
   }
 
   listener.getState().syncStatus.cuesAt[String(cueList)] = new Date().toISOString();
+  return count;
+}
+
+async function syncPresetsFromConsole(
+  client: EosClient,
+  listener: EosListener,
+  timeoutMs: number
+): Promise<number> {
+  await client.send(getPresetCount());
+  const countMsg = await listener.waitFor(/^\/eos\/out\/get\/preset\/count$/, timeoutMs);
+  const count = Number(countMsg.args[0] ?? 0);
+
+  const presets: Record<string, PresetState> = {};
+  for (let index = 0; index < count; index++) {
+    await client.send(getPresetIndex(index));
+    const listMsg = await listener.waitFor(
+      new RegExp(`^/eos/out/get/preset/\\d+/list/0$`),
+      timeoutMs
+    );
+    const number = Number(listMsg.address.split("/")[5]);
+    const base = parseBaseRecordTarget(listMsg.args);
+    presets[presetKey(number)] = { number, uid: base.uid, label: base.label, raw: listMsg.args };
+    await sleep(INDEX_STEP_MS);
+  }
+
+  listener.getState().presets = presets;
+  listener.getState().syncStatus.presetsAt = new Date().toISOString();
+  return count;
+}
+
+async function syncPalettesOfType(
+  client: EosClient,
+  listener: EosListener,
+  type: PaletteType,
+  timeoutMs: number
+): Promise<number> {
+  await client.send(getPaletteCount(type));
+  const countMsg = await listener.waitFor(
+    new RegExp(`^/eos/out/get/${type}/count$`),
+    timeoutMs
+  );
+  const count = Number(countMsg.args[0] ?? 0);
+
+  for (let index = 0; index < count; index++) {
+    await client.send(getPaletteIndex(type, index));
+    await listener.waitFor(new RegExp(`^/eos/out/get/${type}/\\d+/list/0$`), timeoutMs);
+    await sleep(INDEX_STEP_MS);
+  }
+
+  listener.getState().syncStatus.palettesAt[type] = new Date().toISOString();
   return count;
 }
 

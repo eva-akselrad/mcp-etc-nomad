@@ -7,7 +7,7 @@ export function registerShowResources(server: McpServer, ctx: EosContext): void 
     "eos://show/groups",
     {
       title: "Show groups",
-      description: "Cached groups and channel membership (sync via sync_show_targets)",
+      description: "Cached groups (sync via sync_show_targets)",
       mimeType: "application/json",
     },
     async (uri) => {
@@ -18,13 +18,7 @@ export function registerShowResources(server: McpServer, ctx: EosContext): void 
         lastSyncedAt: state.syncStatus.groupsAt ?? state.lastSyncedAt,
       };
       return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: "application/json",
-            text: JSON.stringify(payload, null, 2),
-          },
-        ],
+        contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(payload, null, 2) }],
       };
     }
   );
@@ -45,13 +39,7 @@ export function registerShowResources(server: McpServer, ctx: EosContext): void 
         lastSyncedAt: state.syncStatus.cueListsAt ?? state.lastSyncedAt,
       };
       return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: "application/json",
-            text: JSON.stringify(payload, null, 2),
-          },
-        ],
+        contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(payload, null, 2) }],
       };
     }
   );
@@ -62,12 +50,8 @@ export function registerShowResources(server: McpServer, ctx: EosContext): void 
       list: async () => {
         const state = ctx.listener.getState();
         const lists = new Set<number>();
-        for (const cl of Object.values(state.cueLists)) {
-          lists.add(cl.number);
-        }
-        for (const cue of Object.values(state.cues)) {
-          lists.add(cue.cueList);
-        }
+        for (const cl of Object.values(state.cueLists)) lists.add(cl.number);
+        for (const cue of Object.values(state.cues)) lists.add(cue.cueList);
         return {
           resources: [...lists].sort((a, b) => a - b).map((list) => ({
             uri: `eos://show/cues/${list}`,
@@ -79,7 +63,7 @@ export function registerShowResources(server: McpServer, ctx: EosContext): void 
     }),
     {
       title: "Cues in a cue list",
-      description: "Cached cues for a cue list — URI: eos://show/cues/{list}",
+      description: "Cached cues — URI: eos://show/cues/{list}",
       mimeType: "application/json",
     },
     async (uri, { list }) => {
@@ -93,13 +77,60 @@ export function registerShowResources(server: McpServer, ctx: EosContext): void 
         lastSyncedAt: state.syncStatus.cuesAt[String(cueList)] ?? state.lastSyncedAt,
       };
       return {
-        contents: [
-          {
-            uri: uri.href,
-            mimeType: "application/json",
-            text: JSON.stringify(payload, null, 2),
-          },
-        ],
+        contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(payload, null, 2) }],
+      };
+    }
+  );
+
+  server.registerResource(
+    "show-presets",
+    "eos://show/presets",
+    {
+      title: "Show presets",
+      description: "Cached presets from sync_show_targets",
+      mimeType: "application/json",
+    },
+    async (uri) => {
+      const state = ctx.listener.getState();
+      const payload = {
+        presets: Object.values(state.presets),
+        count: Object.keys(state.presets).length,
+        lastSyncedAt: state.syncStatus.presetsAt ?? state.lastSyncedAt,
+      };
+      return {
+        contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(payload, null, 2) }],
+      };
+    }
+  );
+
+  server.registerResource(
+    "show-palettes",
+    new ResourceTemplate("eos://show/palettes/{type}", {
+      list: async () => ({
+        resources: (["ip", "fp", "cp", "bp"] as const).map((type) => ({
+          uri: `eos://show/palettes/${type}`,
+          name: `${type.toUpperCase()} palettes`,
+          mimeType: "application/json",
+        })),
+      }),
+    }),
+    {
+      title: "Show palettes",
+      description: "Cached palettes — URI: eos://show/palettes/{type} (ip|fp|cp|bp)",
+      mimeType: "application/json",
+    },
+    async (uri, { type }) => {
+      const paletteType = String(type) as "ip" | "fp" | "cp" | "bp";
+      const state = ctx.listener.getState();
+      const palettes = Object.values(state.palettes).filter((p) => p.type === paletteType);
+      const payload = {
+        type: paletteType,
+        palettes,
+        count: palettes.length,
+        lastSyncedAt: state.syncStatus.palettesAt[paletteType] ?? state.lastSyncedAt,
+      };
+      return {
+        contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(payload, null, 2) }],
       };
     }
   );

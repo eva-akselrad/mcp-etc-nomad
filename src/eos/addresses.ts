@@ -294,11 +294,40 @@ export function getCue(cueList: number, cue: number | string): string {
   return `/eos/get/cue/${cueList}/${targetNumber(cue, "cue")}/0`;
 }
 
-/** OSC set label for some targets (Record itself stays CLI). */
+/** OSC Set — Dictionary /eos/set/* (Record itself stays CLI). */
 export function setGroupLabel(group: number): string {
   return `/eos/set/group/${group}/label`;
 }
 
+/** Group channel membership; Thru ranges as "from > thru" per Dictionary. */
+export function setGroupChannels(group: number): string {
+  return `/eos/set/group/${group}/chans`;
+}
+
 export function setCueLabel(cueList: number, cue: number | string): string {
   return `/eos/set/cue/${cueList}/${targetNumber(cue, "cue")}/label`;
+}
+
+export function setPresetLabel(preset: number): string {
+  return `/eos/set/preset/${preset}/label`;
+}
+
+export function setPaletteLabel(type: PaletteType, palette: number): string {
+  return `/eos/set/${type}/${palette}/label`;
+}
+
+export function getPresetCount(): string {
+  return "/eos/get/preset/count";
+}
+
+export function getPresetIndex(index: number): string {
+  return `/eos/get/preset/index/${index}`;
+}
+
+export function getPaletteCount(type: PaletteType): string {
+  return `/eos/get/${type}/count`;
+}
+
+export function getPaletteIndex(type: PaletteType, index: number): string {
+  return `/eos/get/${type}/index/${index}`;
 }

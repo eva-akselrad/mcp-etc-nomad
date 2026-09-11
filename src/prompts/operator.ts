@@ -62,18 +62,19 @@ const PROGRAMMER_INSTRUCTIONS = `You are programming an ETC Eos Family console v
 10. Parts: Cue 1 Part 2 Enter then Record/Update — never assume multipart from bare cue number.
 
 ## Copy / Move / Delete
-11. Cue copy: Copy Cue 1 Thru 5 Cue 10 Enter (programming_copy). Omit cueList on active list.
+11. Cue copy: Copy Cue 1 Thru 5 Cue 10 Enter (copy_target). Omit cueList on active list.
 12. Channel Copy To ≠ patch copy. Live levels vs patch 111 Copy To 116 (patch_copy_to). {Plus Show}/{Only Show} softkeys change scope.
 13. Patch MOVE = double Copy To: 116 Copy To Copy To 120 (patch_move). Single Copy To is NOT move.
-14. Move Effect 1 At Effect 2 (programming_move sourceType=effect) — do not reuse cue copy templates.
-15. Delete: confirm=true AND confirm_delete=true. Desk may need second Enter. Prefer Blind. Sneak/Home/Out are NOT Delete.
+14. Move Effect 1 At Effect 2 (move_target sourceType=effect) — do not reuse cue copy templates.
+15. Delete (delete_target): confirm=true AND confirm_delete=true. Desk may need second Enter. Prefer Blind. Sneak/Home/Out are NOT Delete.
 16. After record/copy/delete, refresh_cache runs sync_show_targets — do not trust stale eos://show/* resources.
 
-## Tools
-- cue_record, cue_update, programming_copy, programming_move, programming_delete
-- patch_copy_to, patch_move, unpatch_channel (unpatch ≠ delete)
-- group_record, target_label (use_osc=true for /eos/set/.../label on group/cue)
-- sync_show_targets, query_groups / query_cuelists / query_cues
+## Tools (Dictionary-aligned names)
+- record_cue, update_cue, record_group, record_preset, record_palette
+- copy_target, move_target, delete_target (+ confirm_delete)
+- label_target (/eos/set/.../label), group_set_channels (/eos/set/group/{n}/chans, Thru as ">")
+- patch_channel, patch_copy_to, patch_move, unpatch_channel (eos-patch)
+- sync_show_targets, get_groups, get_cuelists, get_cues, get_presets, get_palettes
 
 Pin EOS_VERSION in env for syntax hints. eos_command remains the parity backstop.
 `;
@@ -88,7 +89,7 @@ const PATCH_INSTRUCTIONS = `You are patching fixtures on an ETC Eos Family conso
 17. Enter Patch display first on Live CLI (enter_patch_display=true) or syntax may misread.
 18. Pin EOS_VERSION — patch syntax is version-sensitive (check tool responses for eosVersion).
 19. Prefer explicit Address and Universe in patch_channel templates.
-20. Unpatch (unpatch_channel) ≠ Delete channel data (programming_delete).
+20. Unpatch (unpatch_channel) ≠ Delete channel data (delete_target).
 21. Prefer fixtureTypeNumber over fixtureType names when automating (spaces in library names).
 
 ## Examples
@@ -99,7 +100,7 @@ const PATCH_INSTRUCTIONS = `You are patching fixtures on an ETC Eos Family conso
 
 ## After patch
 - Run sync_show_targets before trusting eos://show/groups or cue caches.
-- Labels: target_label with use_osc=true sends /eos/set/group|cue/.../label; Record stays CLI.
+- Labels: label_target sends /eos/set/.../label; group_set_channels uses /eos/set/group/{n}/chans with "1 > 9" Thru syntax.
 
 Nomad offline: dongle tier caps outputs. Multi-console: OSC to session Host only.
 `;

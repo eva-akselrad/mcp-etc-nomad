@@ -1,4 +1,11 @@
-import type { CueListState, CueState, GroupState, SyncStatus } from "./show-types.js";
+import type {
+  CueListState,
+  CueState,
+  GroupState,
+  PaletteState,
+  PresetState,
+  SyncStatus,
+} from "./show-types.js";
 
 export type ConsoleMode = "blind" | "live" | "unknown";
 
@@ -50,6 +57,8 @@ export interface EosState {
   groups: Record<string, GroupState>;
   cueLists: Record<string, CueListState>;
   cues: Record<string, CueState>;
+  presets: Record<string, PresetState>;
+  palettes: Record<string, PaletteState>;
   syncStatus: SyncStatus;
 }
 
@@ -69,6 +78,8 @@ export function createInitialState(): EosState {
     groups: {},
     cueLists: {},
     cues: {},
-    syncStatus: { cuesAt: {} },
+    presets: {},
+    palettes: {},
+    syncStatus: { cuesAt: {}, palettesAt: {} },
   };
 }
