@@ -26,22 +26,22 @@ Control ETCnomad and Eos desks over **OSC** so an LLM can operate cues, levels, 
 
 Live-write tools require `confirm=true` when `EOS_REQUIRE_CONFIRM=true` (default) and `allow_live=true` when the console is **LIVE** (or state is unknown) and `EOS_ALLOW_LIVE=false` (default). Read `get_console_state` / `eos://playback/state` first.
 
-**Intensity scales:** channel/group levels are **0–100** (percent). Faders and subs use **0.0–1.0**. Grand master tool API is **0–100** (mapped to `/eos/fader/0/1`). Cue-fire rate limit (default 12/min) is bypassed with `override_rate_limit=true` — `confirm` does **not** bypass rate limits.
+**Intensity scales:** channel/group levels and `color_set_rgb` / `channel_set_param` are **0–100** (percent, converted at TX). **`fader_set_level` stays 0.0–1.0** (OSC native). Grand master and **submaster** tool APIs are **0–100** (mapped to OSC 0.0–1.0). Cue-fire rate limit (default 12/min) is bypassed with `override_rate_limit=true` — `confirm` does **not** bypass rate limits.
 
 | Group | Tools |
 |-------|--------|
-| Playback | `go_to_cue` (CLI GTC preferred), `cue_select`, `cue_fire`, `cue_go`, `cue_hold`, `cue_back`, `cue_resume`, `cue_stop` (deprecated→hold), `cue_list_go`, `get_active_cue`, `get_pending_cues` |
-| GM / BO | `grandmaster_set_level` (0–100 → fader 0/1), `blackout` (BO key — separate from GM=0) |
-| Channel check | `highlight` (state + channels/ranges), `rem_dim` (same shape), `timing_disable`, `sneak`, `home` (selection required) |
-| Park | `park_channel`, `unpark_channel`, `get_parked` |
+| Playback | `go_to_cue` (CLI GTC preferred), `cue_fire` (alias: Assert+GTC, not `/eos/cue/.../fire`), `cue_select`, `cue_go`, `cue_hold`, `cue_back`, `cue_resume`, `cue_stop` (deprecated→hold), `cue_list_go`, `get_active_cue`, `get_pending_cues` |
+| GM / BO | `grandmaster_set_level` (0–100 → fader 0/1), `blackout` (BO key — `state` default `on`) |
+| Channel check | `highlight` / `rem_dim` (`state` + channels/ranges), `timing_disable` (`state`), `sneak` (optional selection — omit = current; optional `time`), `home` (selection required — no whole-rig) |
+| Park | `park`, `unpark` (`park_channel` / `unpark_channel` deprecated aliases), `get_parked` |
 | Cue list banks | `cue_list_bank_config`, `cue_list_bank_page`, `cue_list_bank_select`, `cue_list_bank_reset` |
-| Faders / subs | `fader_bank_config`, `fader_set_level`, `fader_load` / `_unload` / `_stop` / `_fire`, `fader_bank_page`, `fader_bank_reset`, `submaster_set_level`, `submaster_bump` (`submaster_fire` alias), `submaster_select` |
+| Faders / subs | `fader_set_level` (0.0–1.0), `fader_bank_config`, `fader_load` / `_unload` / `_stop` / `_fire`, `fader_bank_page`, `fader_bank_reset`, `submaster_set_level` (0–100), `submaster_bump` (`submaster_fire` alias), `submaster_select` |
 | Palettes / presets | `palette_select`, `palette_recall` (`palette_fire` alias), `preset_select`, `preset_recall` (`preset_fire` alias) |
 | Keys / macros | `key_press`, `softkey_press`, `macro_select`, `macro_fire`, `staging_mode_toggle`, `list_osc_keys` |
 | Direct selects | `direct_select_bank_create`, `direct_select_bank_page`, `direct_select_press` |
 | Command line | `eos_command`, `eos_new_command`, `eos_event` |
 | Levels | `channel_select` (Thru/+), `channel_set_level` (0–100), `channel_set_dmx`, `group_select`, `group_set_level`, `at_set_level` |
-| Color / params | `color_set_hs`, `color_set_rgb`, `channel_set_param` |
+| Color / params | `color_set_hs`, `color_set_rgb` (r/g/b 0–100), `channel_set_param` (`value` 0–100) |
 | Queries | `get_console_state`, `get_command_line`, `get_fader_labels_levels`, `get_direct_selects`, `wait_for_osc`, `osc_reset`, `magic_sheet_open` |
 
 **Resources:** `eos://playback/active`, `eos://playback/pending`, `eos://playback/state`, `eos://playback/faders`, `eos://console/keys`
@@ -160,6 +160,7 @@ npm test
 | `test/command.test.ts` | CLI Enter/`#`/none terminators |
 | `test/keys.test.ts` | OSC hardkey aliases (`go` → `go_0`, etc.) |
 | `test/cli-tools.test.ts` | `eos_command`, keys, palettes, macros, user prefix, mock CLI echo |
+| `test/lighting-expert.test.ts` | Lighting-ops blockers: `go_to_cue`/`cue_fire`/`cueZero`, BO≠GM, `park`/`unpark`, highlight/home selection, timing, subs/GM/RGB 0–100 |
 | `test/golden-replay.test.ts` | Anonymized `/eos/out/*` trace replay (PLAN §11.3) |
 | `test/programming.test.ts` | CLI programming builders (Copy/Delete Thru), tool TX, `sync_show_targets` mock-peer integration |
 | `test/show-admin.test.ts` | Show save/load/**merge**/export gates (`user_intent`, LIVE refuse, `confirm_path`, `needsManual`); **network_session_leave** `user_intent`; TCP framing |
@@ -175,9 +176,10 @@ Programming tools (`record_cue`, `update_cue`, etc.) refuse LIVE/unknown console
 **Nomad offline smoke (manual):** with ETCnomad running and OSC enabled (see above):
 
 1. **Playback / programming:** channel level, cue fire, group+cue record via CLI (`record_cue`), delete with `confirm_delete`
-2. **Show files (Browser):** `show_save` (quick save + path echo); `show_load` and `show_merge` with `user_intent` + `confirm_path` — complete the CIA Browser wizard on the desk (tools return `needsManual`; no auto-load/merge)
-3. **Network:** `network_session_leave` with `user_intent` — complete mirror exit on desk via Stop Mirroring softkey or ALT+F2 (tool returns `needsManual`; no OSC key TX)
-4. **Gates:** verify `show_merge` / `show_load` refuse LIVE without `allow_live`; `network_session_leave` requires `user_intent` when gating is on
+2. **Lighting-ops:** `go_to_cue` (CLI `Go To Cue N` via `/eos/newcmd` — not `/eos/key/go_0`); confirm **blackout** (`/eos/key/blackout`) is separate from **grandmaster_set_level(0)** (BO≠GM); `highlight` / `home` with channel selection (reject bare calls without selection)
+3. **Show files (Browser):** `show_save` (quick save + path echo); `show_load` and `show_merge` with `user_intent` + `confirm_path` — complete the CIA Browser wizard on the desk (tools return `needsManual`; no auto-load/merge)
+4. **Network:** `network_session_leave` with `user_intent` — complete mirror exit on desk via Stop Mirroring softkey or ALT+F2 (tool returns `needsManual`; no OSC key TX)
+5. **Gates:** verify `show_merge` / `show_load` refuse LIVE without `allow_live`; `network_session_leave` requires `user_intent` when gating is on
 
 Full checklist: PLAN.md §11.2.
 

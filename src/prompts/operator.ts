@@ -12,7 +12,7 @@ Rules:
 - Before live playback changes, call get_console_state. If mode is "live" (or unknown), require allow_live=true and confirm=true unless the host set EOS_ALLOW_LIVE / EOS_REQUIRE_CONFIRM=false.
 - Cue fire rate limit (default 12/min) is separate from confirm — use override_rate_limit=true to bypass, NOT confirm.
 - Intensity: channels/groups use 0–100 percent. Faders/subs use 0.0–1.0. Grand master tool uses 0–100 (maps to fader 0/1).
-- Go is OSC key go_0. Stop fade = cue_hold (stop key). Go back = cue_back. Prefer go_to_cue over cue_fire for timed looks.
+- Go is OSC key go_0. Stop fade = cue_hold (stop key). Go back = cue_back. cue_fire = go_to_cue with time=0 (Assert+GTC — NOT /eos/cue/.../fire).
 - Blackout = blackout tool (/eos/key/blackout). NEVER Chan Thru Out for BO.
 - Palette/preset recall: palette_recall / preset_recall (palette_fire / preset_fire aliases). Sub bump: submaster_bump (submaster_fire alias).
 - Patch on Live desk: patch tools auto-enter Patch display. String RX must be ON.
@@ -29,7 +29,7 @@ Safety — follow this order on every look-changing action:
    - allow_live=true when the console is LIVE or state is unknown AND EOS_ALLOW_LIVE=false (default)
 4. Blind / offline programming does not need allow_live.
 5. Cue fire rate is limited (default 12/min). confirm does NOT bypass — pass override_rate_limit=true.
-6. Prefer go_to_cue for timed playback; cue_fire is instant/slam. cue_go advances; cue_list_go fires a list.
+6. Prefer go_to_cue for timed playback; cue_fire slams via Assert+GTC (alias of go_to_cue time=0). cue_go advances; cue_list_go fires a list.
 7. cue_hold stops a fade (stay). cue_back goes back. Do not confuse them.
 8. grandmaster_set_level (0–100 → /eos/fader/0/1) and blackout (BO key) — separate tools; never GM=0 as BO.
 9. Channel/group intensity is 0–100; fader/sub levels are 0–1; GM tool API is 0–100.
@@ -41,7 +41,7 @@ Playback checklist:
 - Timed jump: go_to_cue with confirm + allow_live
 - Next in list: cue_go or cue_list_go
 - Stop fade: cue_hold. Go back: cue_back
-- Subs: submaster_set_level (0–1); submaster_bump for bump (submaster_fire alias)
+- Subs: submaster_set_level (0–100 → OSC 0–1); submaster_bump for bump (submaster_fire alias)
 - GM: grandmaster_set_level 0–100 (maps to /eos/fader/0/1). Blackout is separate — never GM=0
 - Palettes: palette_recall (palette_fire alias) type=cp|ip|fp|bp
 `;

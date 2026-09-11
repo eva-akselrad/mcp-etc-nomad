@@ -1,7 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import {
-  cueFire,
   cueListGo,
   cueListStop,
   cueSelect,
@@ -37,6 +36,94 @@ async function sendCliStep(ctx: EosContext, line: string): Promise<string> {
   return cmd.text;
 }
 
+type GoToCueRunArgs = {
+  cue?: number | string;
+  cueList?: number;
+  out?: boolean;
+  cueZero?: boolean;
+  time?: number | string;
+  assert?: number;
+  method?: "cli" | "key";
+  confirm?: boolean;
+  allow_live?: boolean;
+  override_rate_limit?: boolean;
+};
+
+async function runGoToCue(ctx: EosContext, args: GoToCueRunArgs) {
+  const blocked = gateCueFire(ctx, args);
+  if (blocked) return blocked;
+
+  const { cue, cueList, out, cueZero, time, assert, method } = args;
+  const hasCue = cue !== undefined;
+  const hasOut = out === true;
+  const hasCueZero = cueZero === true;
+  const count = [hasCue, hasOut, hasCueZero].filter(Boolean).length;
+  if (count !== 1) {
+    return jsonResult(
+      { ok: false, error: "Provide exactly one of cue, out=true, or cueZero=true (XOR)." },
+      true
+    );
+  }
+
+  const steps: string[] = [];
+  const transport = method ?? "cli";
+
+  if (transport === "cli") {
+    if (time !== undefined) {
+      if (time === 0 || time === "0") {
+        if (assert !== undefined && assert !== 0) {
+          steps.push(await sendCliStep(ctx, `Assert ${assert}`));
+        } else {
+          await sendButton(ctx, keyPress("assert"));
+          steps.push("/eos/key/assert");
+        }
+      } else {
+        steps.push(await sendCliStep(ctx, `Time ${time}`));
+      }
+    }
+
+    const line = buildGoToCueCommand({ cue, cueList, out, cueZero });
+    steps.push(await sendCliStep(ctx, line));
+
+    return jsonResult({
+      ok: true,
+      action: "go_to_cue",
+      method: "cli",
+      path: "/eos/newcmd",
+      steps,
+      cueList,
+      cue,
+      out,
+      cueZero,
+      time,
+    });
+  }
+
+  if (time !== undefined && (time === 0 || time === "0")) {
+    await sendButton(ctx, keyPress("assert"));
+    steps.push("/eos/key/assert");
+  } else if (time !== undefined) {
+    steps.push(await sendCliStep(ctx, `Time ${time}`));
+  }
+
+  const gtcAddress = keyPress(hasCueZero ? "go_to_cue_0" : "go_to_cue");
+  await sendButton(ctx, gtcAddress);
+  steps.push(gtcAddress);
+
+  return jsonResult({
+    ok: true,
+    action: "go_to_cue",
+    method: "key",
+    steps,
+    cueList,
+    cue,
+    out,
+    cueZero,
+    time,
+    note: "CLI method preferred; key path does not enter cue digits — select cue first if needed.",
+  });
+}
+
 export function registerPlaybackTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
     "cue_select",
@@ -62,106 +149,53 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
     "go_to_cue",
     {
       description:
-        "Go To Cue (GTC) via CLI /eos/newcmd (preferred): 'Go To Cue 5', 'Go To Cue 1/10', 'Go To Cue Out'. NOT /eos/cue/.../fire or /eos/key/go_0. Optional method=key uses /eos/key/go_to_cue.",
+        "Go To Cue (GTC) via CLI /eos/newcmd (preferred): 'Go To Cue 5', 'Go To Cue 1/10', 'Go To Cue Out', 'Go To Cue 0'. NOT /eos/cue/.../fire or /eos/key/go_0. Optional method=key uses /eos/key/go_to_cue or go_to_cue_0.",
       inputSchema: goToCueInputSchema,
       annotations: { destructiveHint: true },
     },
-    async ({ cue, cueList, out, time, assert, method, confirm, allow_live, override_rate_limit }) => {
-      const blocked = gateCueFire(ctx, { confirm, allow_live, override_rate_limit });
-      if (blocked) return blocked;
-
-      const hasCue = cue !== undefined;
-      const hasOut = out === true;
-      if (hasCue === hasOut) {
-        return jsonResult(
-          { ok: false, error: "Provide cue OR out=true (XOR), not both and not neither." },
-          true
-        );
-      }
-
-      const steps: string[] = [];
-      const transport = method ?? "cli";
-
-      if (transport === "cli") {
-        if (time !== undefined) {
-          if (time === 0 || time === "0") {
-            if (assert !== undefined && assert !== 0) {
-              steps.push(await sendCliStep(ctx, `Assert ${assert}`));
-            } else {
-              await sendButton(ctx, keyPress("assert"));
-              steps.push("/eos/key/assert");
-            }
-          } else {
-            steps.push(await sendCliStep(ctx, `Time ${time}`));
-          }
-        }
-
-        const line = buildGoToCueCommand({ cue, cueList, out });
-        steps.push(await sendCliStep(ctx, line));
-
-        return jsonResult({
-          ok: true,
-          action: "go_to_cue",
-          method: "cli",
-          path: "/eos/newcmd",
-          steps,
-          cueList,
-          cue,
-          out,
-          time,
-        });
-      }
-
-      // Key fallback: /eos/key/go_to_cue — not go_0
-      if (time !== undefined && (time === 0 || time === "0")) {
-        await sendButton(ctx, keyPress("assert"));
-        steps.push("/eos/key/assert");
-      } else if (time !== undefined) {
-        steps.push(await sendCliStep(ctx, `Time ${time}`));
-      }
-
-      const gtcAddress = keyPress("go_to_cue");
-      await sendButton(ctx, gtcAddress);
-      steps.push(gtcAddress);
-
-      return jsonResult({
-        ok: true,
-        action: "go_to_cue",
-        method: "key",
-        steps,
-        cueList,
-        cue,
-        out,
-        time,
-        note: "CLI method preferred; key path does not enter cue digits — select cue first if needed.",
-      });
-    }
+    async (args) => runGoToCue(ctx, args)
   );
+
+  const cueFireInputSchema = z.object({
+    cue: cueNumber,
+    cueList: z.number().int().positive().optional(),
+    assert: z
+      .number()
+      .optional()
+      .default(0)
+      .describe("Assert time when slamming (time=0, default 0)."),
+    method: z.enum(["cli", "key"]).optional().default("cli"),
+    ...cueFireFields,
+  });
+
+  const cueFireHandler = async (args: z.infer<typeof cueFireInputSchema>) =>
+    runGoToCue(ctx, {
+      cue: args.cue,
+      cueList: args.cueList,
+      time: 0,
+      assert: args.assert ?? 0,
+      method: args.method,
+      confirm: args.confirm,
+      allow_live: args.allow_live,
+      override_rate_limit: args.override_rate_limit,
+    });
 
   server.registerTool(
     "cue_fire",
     {
       description:
-        "Fire a specific cue immediately via /eos/cue/.../fire (slam/jump). Prefer go_to_cue for timed GTC playback.",
-      inputSchema: z.object({
-        cue: cueNumber,
-        cueList: z.number().int().positive().optional(),
-        part: z.number().int().positive().optional(),
-        ...cueFireFields,
-      }),
+        "Instant cue slam (alias of go_to_cue with time=0: Assert + GTC via /eos/newcmd). NOT /eos/cue/.../fire.",
+      inputSchema: cueFireInputSchema,
       annotations: { destructiveHint: true },
     },
-    async ({ cue, cueList, part, confirm, allow_live, override_rate_limit }) => {
-      const blocked = gateCueFire(ctx, { confirm, allow_live, override_rate_limit });
-      if (blocked) return blocked;
-
-      const address = cueFire(cueList, cue, part);
-      if (cueList === undefined) {
-        await ctx.client.send(address, cue);
-      } else {
-        await ctx.client.send(address, 1.0);
-      }
-      return jsonResult({ ok: true, action: "cue_fire", address, cueList, cue, part });
+    async (args) => {
+      const result = await cueFireHandler(args);
+      if (result.isError) return result;
+      const body = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+      body.action = "cue_fire";
+      body.canonicalAction = "go_to_cue";
+      body.time = 0;
+      return jsonResult(body);
     }
   );
 

@@ -17,6 +17,7 @@ describe("Lighting Expert priority pack", () => {
     assert.equal(buildGoToCueCommand({ cue: 5 }), "Go To Cue 5");
     assert.equal(buildGoToCueCommand({ cueList: 1, cue: 10 }), "Go To Cue 1/10");
     assert.equal(buildGoToCueCommand({ out: true }), "Go To Cue Out");
+    assert.equal(buildGoToCueCommand({ cueZero: true }), "Go To Cue 0");
   });
 
   it("go_to_cue prefers CLI via /eos/newcmd — not fire or go_0", async () => {
@@ -43,6 +44,29 @@ describe("Lighting Expert priority pack", () => {
     const blocked = await invokeTool(server, "go_to_cue", {
       cue: 5,
       out: true,
+      confirm: true,
+    });
+    assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /XOR/);
+    assert.equal(client.sent.length, 0);
+  });
+
+  it("go_to_cue cueZero uses CLI Go To Cue 0", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "go_to_cue", { cueZero: true, confirm: true });
+    const newcmds = client.sent
+      .filter((m) => m.address === "/eos/newcmd")
+      .map((m) => String(m.args[0]));
+    assert.ok(newcmds.some((c) => c.includes("Go To Cue 0")));
+  });
+
+  it("go_to_cue rejects cueZero with cue (XOR)", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    const blocked = await invokeTool(server, "go_to_cue", {
+      cue: 0,
+      cueZero: true,
       confirm: true,
     });
     assert.equal(isToolError(blocked), true);
@@ -79,8 +103,31 @@ describe("Lighting Expert priority pack", () => {
     await invokeTool(server, "blackout", { confirm: true });
     const addresses = client.sent.map((m) => m.address);
     assert.ok(addresses.includes("/eos/key/blackout"));
+    assert.equal(client.sent.at(-1)?.args[0], 1.0);
     assert.ok(!addresses.some((a) => a.includes("/eos/chan")));
     assert.ok(!client.sent.some((m) => String(m.args).toLowerCase().includes("thru")));
+  });
+
+  it("blackout default state is on (down edge)", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "blackout", { confirm: true });
+    assert.equal(client.sent.at(-1)?.address, "/eos/key/blackout");
+    assert.equal(client.sent.at(-1)?.args[0], 1.0);
+  });
+
+  it("cue_fire is alias of go_to_cue with time=0 — not /eos/cue/fire", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    const result = await invokeTool(server, "cue_fire", { cue: 3, cueList: 1, confirm: true });
+    assert.equal(isToolError(result), false);
+    const body = parseToolJson<{ action: string; canonicalAction: string; time: number }>(result);
+    assert.equal(body.action, "cue_fire");
+    assert.equal(body.canonicalAction, "go_to_cue");
+    assert.equal(body.time, 0);
+    const addresses = client.sent.map((m) => m.address);
+    assert.ok(addresses.includes("/eos/key/assert"));
+    assert.ok(!addresses.some((a) => a.match(/\/eos\/cue\/.*\/fire$/)));
   });
 
   it("grandmaster_set_level uses /eos/fader/0/1 with 0–100 API", async () => {
@@ -91,13 +138,20 @@ describe("Lighting Expert priority pack", () => {
     assert.equal(client.sent.at(-1)?.args[0], 0.5);
   });
 
-  it("park_channel sends CLI Chan N Park via newcmd", async () => {
+  it("park sends CLI Chan N Park via newcmd", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
-    const result = await invokeTool(server, "park_channel", { channel: 10, confirm: true });
+    const result = await invokeTool(server, "park", { channel: 10, confirm: true });
     assert.equal(isToolError(result), false);
     assert.equal(client.sent.at(-1)?.address, "/eos/newcmd");
     assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 Park/);
+  });
+
+  it("park At level appends CLI At N", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "park", { channel: 10, level: 50, confirm: true });
+    assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 Park At 50/);
   });
 
   it("channel_select Thru range uses thru key", async () => {
@@ -117,10 +171,10 @@ describe("Lighting Expert priority pack", () => {
     assert.ok(addresses.includes("/eos/key/_-%"));
   });
 
-  it("unpark_channel accepts ranges selection", async () => {
+  it("unpark accepts ranges selection", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
-    await invokeTool(server, "unpark_channel", {
+    await invokeTool(server, "unpark", {
       ranges: [{ from: 10, thru: 12 }],
       confirm: true,
     });
@@ -134,15 +188,144 @@ describe("Lighting Expert priority pack", () => {
     assert.equal(client.sent.at(-1)?.address, "/eos/group/2/home");
   });
 
-  it("set_cue_timing accepts numeric timing unions", async () => {
+  it("set_cue_timing time field and follow time; follow/hang mutex", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     await invokeTool(server, "set_cue_timing", {
       cue: 5,
-      upTime: 3,
+      time: 3,
       confirm: true,
     });
     assert.match(String(client.sent.at(-1)?.args[0]), /Time 3/);
+
+    client.clear();
+    await invokeTool(server, "set_cue_timing", {
+      cue: 5,
+      follow: "1/2",
+      confirm: true,
+    });
+    assert.match(String(client.sent.at(-1)?.args[0]), /Follow 1\/2/);
+
+    client.clear();
+    const blocked = await invokeTool(server, "set_cue_timing", {
+      cue: 5,
+      follow: 1,
+      hang: 2,
+      confirm: true,
+    });
+    assert.equal(isToolError(blocked), true);
+    assert.equal(client.sent.length, 0);
+  });
+
+  it("timing_disable accepts state", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "timing_disable", { state: "off", confirm: true });
+    assert.equal(client.sent.at(-1)?.address, "/eos/key/timing_disable");
+    assert.equal(client.sent.at(-1)?.args[0], 0.0);
+  });
+
+  it("color_set_rgb maps r/g/b 0–100 to OSC 0–1", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "color_set_rgb", {
+      r: 100,
+      g: 50,
+      b: 0,
+      channel: 1,
+      confirm: true,
+    });
+    assert.equal(client.sent.at(-1)?.address, "/eos/chan/1/color/rgb");
+    assert.deepEqual(client.sent.at(-1)?.args, [1, 0.5, 0]);
+  });
+
+  it("channel_set_param uses value arg", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "channel_set_param", {
+      param: "pan",
+      value: 75,
+      channel: 2,
+      confirm: true,
+    });
+    assert.equal(client.sent.at(-1)?.address, "/eos/chan/2/param/pan");
+    assert.equal(client.sent.at(-1)?.args[0], 75);
+  });
+
+  it("submaster_set_level uses 0–100 API", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "submaster_set_level", { sub: 5, level: 75, confirm: true });
+    assert.equal(client.sent.at(-1)?.address, "/eos/sub/5");
+    assert.equal(client.sent.at(-1)?.args[0], 0.75);
+  });
+
+  it("blackout accepts state on", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "blackout", { state: "on", confirm: true });
+    assert.equal(client.sent.at(-1)?.address, "/eos/key/blackout");
+    assert.equal(client.sent.at(-1)?.args[0], 1.0);
+  });
+
+  it("sneak with selection and time", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "sneak", {
+      channels: [1, 2],
+      time: 5,
+      confirm: true,
+    });
+    const addresses = client.sent.map((m) => m.address);
+    assert.ok(addresses.includes("/eos/key/+"));
+    assert.ok(addresses.some((a) => a === "/eos/newcmd"));
+    assert.ok(addresses.includes("/eos/key/sneak"));
+    assert.match(
+      String(client.sent.find((m) => m.address === "/eos/newcmd")?.args[0]),
+      /Time 5/
+    );
+  });
+
+  it("sneak without selection uses current programmer selection", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "sneak", { confirm: true });
+    const addresses = client.sent.map((m) => m.address);
+    assert.ok(!addresses.some((a) => a.startsWith("/eos/chan")));
+  });
+
+  it("make_manual with channel selection", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "make_manual", { channel: 10, confirm: true });
+    const addresses = client.sent.map((m) => m.address);
+    assert.ok(addresses.includes("/eos/chan"));
+    assert.match(String(client.sent.at(-1)?.args[0]), /Make Manual/);
+  });
+
+  it("unpark_channel deprecated alias delegates to unpark", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    const result = await invokeTool(server, "unpark_channel", {
+      ranges: [{ from: 10, thru: 12 }],
+      confirm: true,
+    });
+    assert.equal(isToolError(result), false);
+    const body = parseToolJson<{ action: string; canonicalAction: string }>(result);
+    assert.equal(body.action, "unpark_channel");
+    assert.equal(body.canonicalAction, "unpark");
+    assert.match(String(client.sent.at(-1)?.args[0]), /Unpark/);
+  });
+
+  it("park_channel deprecated alias delegates to park", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    const result = await invokeTool(server, "park_channel", { channel: 10, confirm: true });
+    assert.equal(isToolError(result), false);
+    const body = parseToolJson<{ action: string; canonicalAction: string }>(result);
+    assert.equal(body.action, "park_channel");
+    assert.equal(body.canonicalAction, "park");
+    assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 Park/);
   });
 
   it("channel_select ranges[] uses thru key", async () => {
@@ -197,11 +380,12 @@ describe("Lighting Expert priority pack", () => {
     assert.equal(client.sent.at(-1)?.address, "/eos/chan/3/home");
   });
 
-  it("home without selection is rejected", async () => {
+  it("home without selection is rejected (no whole-rig home)", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     const blocked = await invokeTool(server, "home", { confirm: true });
     assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /selection/);
     assert.equal(client.sent.length, 0);
   });
 

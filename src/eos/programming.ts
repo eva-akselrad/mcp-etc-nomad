@@ -430,32 +430,52 @@ export function buildMakeManualCommand(): string {
   return "Make Manual";
 }
 
-/** Set cue timing fields via CLI (Time, Delay, Follow/Hang, up/down, IPCB). */
+/** Set cue timing fields via CLI (Time, Delay, Follow/Hang, down, IPCB). */
 export function buildSetCueTimingCommand(options: {
   cue: number | string;
   cueList?: number;
   part?: number;
-  upTime?: number | string;
-  upDelay?: number | string;
-  downTime?: number | string;
+  time?: number | string;
+  delay?: number | string;
+  down?: number | string;
   downDelay?: number | string;
-  focusTime?: number | string;
-  colorTime?: number | string;
-  beamTime?: number | string;
-  follow?: boolean;
+  focus?: number | string;
+  color?: number | string;
+  beam?: number | string;
+  follow?: number | string;
   hang?: number | string;
   block?: boolean;
+  /** @deprecated Use time */
+  upTime?: number | string;
+  /** @deprecated Use delay */
+  upDelay?: number | string;
+  /** @deprecated Use down */
+  downTime?: number | string;
+  /** @deprecated Use focus */
+  focusTime?: number | string;
+  /** @deprecated Use color */
+  colorTime?: number | string;
+  /** @deprecated Use beam */
+  beamTime?: number | string;
 }): string {
   const fmt = (value: number | string) => String(value);
+  const time = options.time ?? options.upTime;
+  const delay = options.delay ?? options.upDelay;
+  const down = options.down ?? options.downTime;
+  const focus = options.focus ?? options.focusTime;
+  const color = options.color ?? options.colorTime;
+  const beam = options.beam ?? options.beamTime;
   const parts = [formatCueRef({ cueList: options.cueList, cue: options.cue, part: options.part })];
-  if (options.upTime !== undefined) parts.push(`Time ${fmt(options.upTime)}`);
-  if (options.upDelay !== undefined) parts.push(`Delay ${fmt(options.upDelay)}`);
-  if (options.downTime !== undefined) parts.push(`Down ${fmt(options.downTime)}`);
+  if (time !== undefined) parts.push(`Time ${fmt(time)}`);
+  if (delay !== undefined) parts.push(`Delay ${fmt(delay)}`);
+  if (down !== undefined) parts.push(`Down ${fmt(down)}`);
   if (options.downDelay !== undefined) parts.push(`Down Delay ${fmt(options.downDelay)}`);
-  if (options.focusTime !== undefined) parts.push(`Focus ${fmt(options.focusTime)}`);
-  if (options.colorTime !== undefined) parts.push(`Color ${fmt(options.colorTime)}`);
-  if (options.beamTime !== undefined) parts.push(`Beam ${fmt(options.beamTime)}`);
-  if (options.follow) parts.push("Follow");
+  if (focus !== undefined) parts.push(`Focus ${fmt(focus)}`);
+  if (color !== undefined) parts.push(`Color ${fmt(color)}`);
+  if (beam !== undefined) parts.push(`Beam ${fmt(beam)}`);
+  if (options.follow !== undefined) {
+    parts.push(`Follow ${fmt(options.follow)}`);
+  }
   if (options.hang !== undefined) parts.push(`Hang ${fmt(options.hang)}`);
   if (options.block) parts.push("Block");
   return parts.join(" ");
@@ -466,12 +486,16 @@ export function buildGoToCueCommand(options: {
   cue?: number | string;
   cueList?: number;
   out?: boolean;
+  cueZero?: boolean;
 }): string {
   if (options.out) {
     return "Go To Cue Out";
   }
+  if (options.cueZero) {
+    return "Go To Cue 0";
+  }
   if (options.cue === undefined) {
-    throw new Error("Provide cue or out=true for Go To Cue.");
+    throw new Error("Provide cue, out=true, or cueZero=true for Go To Cue.");
   }
   const cueSeg = targetNumber(options.cue, "cue");
   if (options.cueList !== undefined) {
@@ -480,11 +504,21 @@ export function buildGoToCueCommand(options: {
   return `Go To Cue ${cueSeg}`;
 }
 
-export function buildParkCommand(options: { channel: number; thru?: number }): string {
+export function buildParkCommand(options: {
+  channel: number;
+  thru?: number;
+  level?: number;
+}): string {
+  let base: string;
   if (options.thru !== undefined && options.thru !== options.channel) {
-    return `Chan ${options.channel} Thru ${options.thru} Park`;
+    base = `Chan ${options.channel} Thru ${options.thru} Park`;
+  } else {
+    base = `Chan ${options.channel} Park`;
   }
-  return `Chan ${options.channel} Park`;
+  if (options.level !== undefined) {
+    return `${base} At ${options.level}`;
+  }
+  return base;
 }
 
 export function buildUnparkCommand(options: { channel: number; thru?: number }): string {
@@ -503,6 +537,7 @@ export function buildChannelParkCli(
     ranges?: Array<{ from: number; thru: number }>;
     from?: number;
     thru?: number;
+    level?: number;
   }
 ): string {
   const ranges = [...(input.ranges ?? [])];
@@ -515,15 +550,16 @@ export function buildChannelParkCli(
     return builder({
       channel: range.from,
       thru: range.thru !== range.from ? range.thru : undefined,
+      level: verb === "Park" ? input.level : undefined,
     });
   }
   if (input.channel !== undefined) {
     const builder = verb === "Park" ? buildParkCommand : buildUnparkCommand;
-    return builder({ channel: input.channel, thru: input.thru });
+    return builder({ channel: input.channel, thru: input.thru, level: input.level });
   }
   if (input.channels?.length === 1) {
     const builder = verb === "Park" ? buildParkCommand : buildUnparkCommand;
-    return builder({ channel: input.channels[0] });
+    return builder({ channel: input.channels[0], level: input.level });
   }
   throw new Error(
     `CLI ${verb} needs a single channel or one Thru range; use method=key for multi-channel selection.`
