@@ -327,9 +327,10 @@ Move Effect 1 At Effect 2 Enter
 | `show_save` | Quick Save (Shift+Update), Save CLI, or Save As (Browser) — `confirm_save` for second Enter |
 | `show_load` | Open Browser load wizard — user picks show; requires `user_intent`; never auto-load |
 | `show_merge` | Browser merge flow — partial merge needs {Advanced} in CIA |
-| `show_export` | Returns `manualStepRequired` + Browser wizard path — no `/eos/export` or invented paths |
+| `show_export` | Returns `needsManual` + Browser wizard path — no `/eos/export` or invented paths |
 | `get_show_path` | Query echoed show path via `/eos/get/show/path` |
-| `network_session_join` | Open mirror dialog key — ECU role join is Shell UI at boot |
+| `osc_set_user` | Set OSC virtual user routing (`/eos/user/{id}` prefix) |
+| `network_session_join` | Open mirror dialog key — ECU role join is Shell UI at boot (`needsManual`) |
 | `get_session_info` | `/eos/get/processors`, `userlist`, show/path, version — OSC to session Host only |
 
 Pin `EOS_VERSION` (.esf vs .esf3d). After load/merge: `sync_show_targets` + reconfigure banks. Do not `/eos/reset` on load.
@@ -471,10 +472,11 @@ Lighting desks control **real power to rig**. The MCP must not treat channels ca
 
 ### Phase 3 — Show & system admin
 
-- [x] Show save/load/merge/export wrappers (Eos OSC domain: Browser/key/CLI only, no invented paths)
+- [x] Show save/load/merge/export wrappers (Browser/key/CLI; `confirm_save` / `confirm_path` gates)
 - [x] Patch/unpatch helpers (+ attach/detach, identify, channel check)
-- [x] Network session tools (join/leave/identify via processors/userlist)
-- [x] TCP transport option (3032 length / 3037 SLIP; bidirectional `/eos/out/*`)
+- [x] Network session tools (`osc_set_user`, join/leave `needsManual`, processors/userlist)
+- [x] Real TCP OSC (3032 OSC 1.0 length / 3037 OSC 1.1 SLIP; bidirectional `/eos/out/*`)
+- [x] Resources `eos://console/info|session|version`, `eos://show/path`; prompts `nomad-setup`, `eos-showfile`
 
 ### Phase 4 — Hardening & distribution
 

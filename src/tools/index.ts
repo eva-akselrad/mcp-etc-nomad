@@ -13,6 +13,8 @@ import { registerQueryTools } from "./queries.js";
 import { registerShowAdminTools } from "./show_admin.js";
 
 export function registerTools(server: McpServer, ctx: EosContext): void {
+  // Phase 3 priority: show_save (confirm + path echo) registers first among tools.
+  registerShowAdminTools(server, ctx);
   registerCommandTools(server, ctx);
   registerLevelTools(server, ctx);
   registerPlaybackTools(server, ctx);
@@ -21,7 +23,6 @@ export function registerTools(server: McpServer, ctx: EosContext): void {
   registerKeyMacroTools(server, ctx);
   registerBankTools(server, ctx);
   registerProgrammingTools(server, ctx);
-  registerShowAdminTools(server, ctx);
   registerNetworkTools(server, ctx);
   registerQueryTools(server, ctx);
 }

@@ -37,6 +37,11 @@ import {
 
 const exportTargetSchema = z.enum(["patch", "csv", "ascii", "lightwright", "logs", "show"]);
 
+function parseShowWorkflowResult(result: ReturnType<typeof jsonResult>): Record<string, unknown> {
+  const text = result.content[0]?.text ?? "{}";
+  return JSON.parse(text) as Record<string, unknown>;
+}
+
 async function sendWorkflowKeys(ctx: EosContext, keys: string[]): Promise<string[]> {
   const sent: string[] = [];
   for (const raw of keys) {
@@ -63,6 +68,7 @@ async function runShowWorkflow(
   ctx: EosContext,
   workflow: ShowWorkflowSteps,
   options: {
+    action?: string;
     waitForShowEventMs?: number;
     refreshAfterShowEvent?: boolean;
     needsManual?: boolean;
@@ -126,10 +132,12 @@ async function runShowWorkflow(
 
   return jsonResult({
     ok: true,
-    action: "show_admin",
+    action: options.action ?? "show_admin",
     needsManual: options.needsManual ?? false,
     sent,
     echoedPath,
+    savedPath: echoedPath,
+    pathEchoed: echoedPath !== undefined,
     notes: [
       ...(notes ?? []),
       "No OSC Save/Load verbs — Browser/key_press/CLI only. Never invent file paths.",
@@ -157,7 +165,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
     "show_save",
     {
       description:
-        "Save via keys/CLI only (no paths). quick=Shift+Update; save=Save CLI; save_as=Browser. Needs confirm_save.",
+        "PRIORITY: Save show via keys/CLI (no path args). quick=Shift+Update; save=Save CLI; save_as=Browser. Requires confirm_save + user_intent when gated; echoes saved path from /eos/out/event/show/saved.",
       inputSchema: z.object({
         mode: z.enum(["quick", "save", "save_as"]).optional(),
         wait_for_event_ms: z.number().int().positive().max(60000).optional(),
@@ -175,9 +183,19 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
         mode: args.mode as ShowSaveMode | undefined,
         confirmSave: args.confirm_save,
       });
-      return runShowWorkflow(ctx, workflow, {
+      const result = await runShowWorkflow(ctx, workflow, {
+        action: "show_save",
         waitForShowEventMs: args.wait_for_event_ms ?? 10000,
       });
+      const body = parseShowWorkflowResult(result);
+      if (!body.pathEchoed) {
+        body.notes = [
+          ...(Array.isArray(body.notes) ? body.notes : []),
+          "No path echo yet — retry get_show_path or extend wait_for_event_ms after desk confirm.",
+        ];
+        return jsonResult(body);
+      }
+      return result;
     }
   );
 

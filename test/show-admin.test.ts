@@ -31,6 +31,11 @@ describe("show-admin workflow builders (Eos OSC domain)", () => {
     assert.deepEqual(wf.steps, ["Save", ""]);
   });
 
+  it("quick save sends confirm Enter when confirmSave is set", () => {
+    const wf = buildSaveShowWorkflow({ mode: "quick", confirmSave: true });
+    assert.deepEqual(wf.steps, [""]);
+  });
+
   it("save_as opens Browser via keys only", () => {
     const wf = buildSaveShowWorkflow({ mode: "save_as" });
     assert.deepEqual(wf.keys, ["open_browser", "save_file"]);
@@ -94,6 +99,39 @@ describe("show_admin tools (TX via recording client)", () => {
     const keys = client.sent.filter((m) => m.address.startsWith("/eos/key/"));
     assert.ok(keys.some((m) => m.address.includes("shift")));
     assert.ok(keys.some((m) => m.address.includes("update")));
+  });
+
+  it("show_save with confirm_save sends Enter after quick save keys", async () => {
+    const { server, client } = createHarness({
+      consoleMode: "blind",
+      config: { requireConfirm: false },
+    });
+    await invokeTool(server, "show_save", { mode: "quick", confirm_save: true });
+    const cmds = client.sent.filter((m) => m.address === "/eos/newcmd").map((m) => String(m.args[0]));
+    assert.ok(cmds.some((c) => c.includes("Enter (confirm)") || /Enter$/.test(c)));
+  });
+
+  it("show_save echoes saved path from show event", async () => {
+    const { server } = createHarness({
+      consoleMode: "blind",
+      config: { requireConfirm: false },
+      oscReplies: [
+        {
+          pattern: /^\/eos\/out\/event\/show\//,
+          address: "/eos/out/event/show/saved",
+          args: ["ShowFiles/rehearsal.esf3d"],
+        },
+      ],
+    });
+    const result = await invokeTool(server, "show_save", { mode: "quick", wait_for_event_ms: 100 });
+    const body = parseToolJson<{
+      action: string;
+      savedPath: string;
+      pathEchoed: boolean;
+    }>(result);
+    assert.equal(body.action, "show_save");
+    assert.equal(body.savedPath, "ShowFiles/rehearsal.esf3d");
+    assert.equal(body.pathEchoed, true);
   });
 
   it("show_load requires user_intent and refuses LIVE without allow_live", async () => {

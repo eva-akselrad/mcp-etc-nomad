@@ -35,27 +35,31 @@ export function buildSaveShowWorkflow(options: {
   const mode = options.mode ?? "quick";
 
   if (mode === "quick") {
+    const steps = options.confirmSave ? [""] : [];
     return {
       style: "two_step",
       keys: ["shift", "update"],
-      steps: [],
+      steps,
       notes: [
         ...DOMAIN_NOTES,
         "Quick Save = Shift+Update hardkey sequence (not a path-based CLI).",
+        "Always verify echoedPath from /eos/out/event/show/saved — plot/tech without Save is malpractice.",
         ...(options.confirmSave ? ["Second confirm Enter sent after save keys."] : []),
       ],
     };
   }
 
   if (mode === "save_as") {
+    const steps = options.confirmSave ? [""] : [];
     return {
       style: "two_step",
       keys: ["open_browser", "save_file"],
-      steps: [],
+      steps,
       notes: [
         ...DOMAIN_NOTES,
         "Save As opens Browser — user names file and picks location in CIA.",
-        "Save As often needs a second Enter on the desk confirm dialog.",
+        "Save As often needs a second Enter on the desk confirm dialog (confirm_save).",
+        "Echo saved path from show event — never invent filenames.",
       ],
     };
   }

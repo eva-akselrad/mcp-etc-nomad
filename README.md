@@ -65,7 +65,7 @@ Eos OSC domain rules: **no OSC Save/Load verbs** — Browser + `key_press` + CLI
 
 | Group | Tools |
 |-------|--------|
-| Show files | `show_save`, `show_load`, `show_merge`, `show_export` (`/eos/newcmd` + keys); `get_show_path` |
+| Show files | **`show_save`** (priority: `confirm_save` + path echo), `show_load`, `show_merge`, `show_export`; `get_show_path` |
 | Patch extras | `attach_patch_device`, `detach_patch_device` |
 | Troubleshoot | `identify_fixture`, `channel_check`, `highlight_channels` |
 | Network | `get_session_info`, `osc_set_user`, `network_session_join`, `network_session_leave` |

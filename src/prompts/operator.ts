@@ -143,9 +143,12 @@ const NOMAD_SETUP_INSTRUCTIONS = `You are configuring ETCnomad / Eos network and
 
 const SHOWFILE_INSTRUCTIONS = `You are managing ETC Eos show files via MCP (Eos OSC Domain + Phase 3 spec).
 
+## Priority — show_save
+Plot/tech without Save is malpractice. Use show_save early and often; pass user_intent + confirm_save when gated; verify savedPath/echoedPath from /eos/out/event/show/saved.
+
 ## Hard rules
 1. No OSC Save/Load verbs — Browser + key_press + /eos/newcmd CLI only. Never invent usb1:/ or .esf paths.
-2. show_save: quick=Shift+Update keys; save=Save CLI; save_as=Browser. Use confirm_save for second Enter.
+2. show_save: quick=Shift+Update keys; save=Save CLI; save_as=Browser. Use confirm_save for second Enter; always read echoed path.
 3. show_load / show_merge: Browser wizards only; always pass user_intent; use confirm_path for echoed-path confirm Enter.
 4. show_export: returns needsManual + Browser wizard steps — no /eos/export OSC.
 5. After load/merge: sync_show_targets + reconfigure banks. Never /eos/reset on load.
@@ -161,6 +164,9 @@ const SHOWFILE_INSTRUCTIONS = `You are managing ETC Eos show files via MCP (Eos 
 - user_intent on all system/show ops
 - confirm_save on save
 - confirm_path on load/merge after Browser selection
+
+## Never
+- Blackout via "Channel Thru Out" — use proper blackout keys/cues/subs, not Chan Thru Out CLI.
 `;
 
 export function registerPrompts(server: McpServer, _ctx: EosContext): void {
