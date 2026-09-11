@@ -37,6 +37,19 @@ describe("Lighting Expert priority pack", () => {
     assert.ok(!addresses.includes("/eos/key/go_0"));
   });
 
+  it("go_to_cue rejects cue and out together (XOR)", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    const blocked = await invokeTool(server, "go_to_cue", {
+      cue: 5,
+      out: true,
+      confirm: true,
+    });
+    assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /XOR/);
+    assert.equal(client.sent.length, 0);
+  });
+
   it("go_to_cue Out uses CLI Go To Cue Out", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
@@ -70,10 +83,10 @@ describe("Lighting Expert priority pack", () => {
     assert.ok(!client.sent.some((m) => String(m.args).toLowerCase().includes("thru")));
   });
 
-  it("grandmaster_set_level uses /eos/fader/0/1", async () => {
+  it("grandmaster_set_level uses /eos/fader/0/1 with 0–100 API", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
-    await invokeTool(server, "grandmaster_set_level", { level: 0.5, confirm: true });
+    await invokeTool(server, "grandmaster_set_level", { level: 50, confirm: true });
     assert.equal(client.sent.at(-1)?.address, "/eos/fader/0/1");
     assert.equal(client.sent.at(-1)?.args[0], 0.5);
   });
@@ -96,6 +109,14 @@ describe("Lighting Expert priority pack", () => {
     assert.equal(client.sent.filter((m) => m.address === "/eos/chan").length, 2);
   });
 
+  it("channel_select ranges[] uses thru key", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "channel_select", { ranges: [{ from: 5, thru: 8 }] });
+    const addresses = client.sent.map((m) => m.address);
+    assert.ok(addresses.includes("/eos/key/thru"));
+  });
+
   it("color_set_hs uses Dictionary color path", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
@@ -109,11 +130,28 @@ describe("Lighting Expert priority pack", () => {
     assert.deepEqual(client.sent.at(-1)?.args, [330, 75]);
   });
 
+  it("highlight with channels selects then presses highlight on", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "highlight", { channels: [1, 2], confirm: true });
+    const addresses = client.sent.map((m) => m.address);
+    assert.ok(addresses.includes("/eos/key/+"));
+    assert.ok(addresses.includes("/eos/key/highlight"));
+  });
+
+  it("highlight without selection requires state", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    const blocked = await invokeTool(server, "highlight", { confirm: true });
+    assert.equal(isToolError(blocked), true);
+    assert.equal(client.sent.length, 0);
+  });
+
   it("rem_dim on selection uses /eos/at/remdim", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
-    await invokeTool(server, "rem_dim", { confirm: true });
-    assert.equal(client.sent.at(-1)?.address, "/eos/at/remdim");
+    await invokeTool(server, "rem_dim", { channels: [1], confirm: true });
+    assert.ok(client.sent.some((m) => m.address === "/eos/at/remdim"));
   });
 
   it("home on channel uses /eos/chan/{n}/home", async () => {
@@ -121,6 +159,32 @@ describe("Lighting Expert priority pack", () => {
 
     await invokeTool(server, "home", { channel: 3, confirm: true });
     assert.equal(client.sent.at(-1)?.address, "/eos/chan/3/home");
+  });
+
+  it("home without selection is rejected", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    const blocked = await invokeTool(server, "home", { confirm: true });
+    assert.equal(isToolError(blocked), true);
+    assert.equal(client.sent.length, 0);
+  });
+
+  it("submaster_bump canonical name sends /eos/sub/{n}/fire", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "submaster_bump", { sub: 5, confirm: true });
+    assert.equal(client.sent.at(-1)?.address, "/eos/sub/5/fire");
+  });
+
+  it("palette_recall canonical name sends palette fire path", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "palette_recall", {
+      type: "color",
+      palette: 3,
+      confirm: true,
+    });
+    assert.equal(client.sent.at(-1)?.address, "/eos/cp/fire");
   });
 
   it("confirm does NOT bypass cue-fire rate limit; override_rate_limit does", () => {
@@ -154,15 +218,22 @@ describe("Lighting Expert priority pack", () => {
     assert.equal(client.sent.at(-1)?.address, "/eos/key/resume");
   });
 
-  it("show_save uses shift+update — no invented Save path", async () => {
+  it("show_save is Phase 3 shared impl — requires confirm_save", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
-    const blocked = await invokeTool(server, "show_save", { confirm: true });
+    const blocked = await invokeTool(server, "show_save", {
+      mode: "quick",
+      confirm: true,
+      user_intent: "backup",
+    });
     assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /confirm_save/);
 
     await invokeTool(server, "show_save", {
+      mode: "quick",
       confirm: true,
       confirm_save: true,
+      user_intent: "backup",
     });
     const addresses = client.sent.map((m) => m.address);
     assert.ok(addresses.includes("/eos/key/shift"));

@@ -140,7 +140,7 @@ export class MockOscPeer {
       return;
     }
 
-    const cueIndex = address.match(/^\/eos\/get\/cue\/(\d+)\/noparts\/index$/);
+    const cueIndex = address.match(/^\/eos\/get\/cue\/(\d+)\/(?:noparts\/)?index$/);
     if (cueIndex && args.length > 0) {
       const list = Number(cueIndex[1]);
       const index = Number(args[0]);

@@ -6,11 +6,18 @@ async function tapKey(ctx: EosContext, address: string): Promise<void> {
   await ctx.client.send(address, 0.0);
 }
 
+export interface ChannelRange {
+  from: number;
+  thru: number;
+}
+
 export interface ChannelSelectionInput {
   channel?: number;
   channels?: number[];
+  ranges?: ChannelRange[];
   from?: number;
   thru?: number;
+  minus?: number[];
 }
 
 export interface GroupSelectionInput {
@@ -20,23 +27,36 @@ export interface GroupSelectionInput {
   thru?: number;
 }
 
+function expandLegacyRange(input: ChannelSelectionInput): ChannelRange[] {
+  const ranges = [...(input.ranges ?? [])];
+  if (input.from !== undefined) {
+    ranges.push({ from: input.from, thru: input.thru ?? input.from });
+  }
+  return ranges;
+}
+
 /** Send OSC channel selection steps (Thru / + / − via Dictionary keys). */
 export async function sendChannelSelection(
   ctx: EosContext,
   input: ChannelSelectionInput
 ): Promise<string[]> {
   const sent: string[] = [];
-  const items: Array<number | "thru" | "plus"> = [];
+  const items: Array<number | "thru" | "plus" | "minus"> = [];
 
   if (input.channel !== undefined) {
     items.push(input.channel);
   }
-  if (input.from !== undefined) {
-    items.push(input.from);
-    if (input.thru !== undefined) {
-      items.push("thru", input.thru);
+
+  for (const range of expandLegacyRange(input)) {
+    if (items.length > 0) {
+      items.push("plus");
+    }
+    items.push(range.from);
+    if (range.thru !== range.from) {
+      items.push("thru", range.thru);
     }
   }
+
   for (const ch of input.channels ?? []) {
     if (items.length > 0) {
       items.push("plus");
@@ -44,8 +64,15 @@ export async function sendChannelSelection(
     items.push(ch);
   }
 
+  for (const ch of input.minus ?? []) {
+    if (items.length > 0) {
+      items.push("minus");
+    }
+    items.push(ch);
+  }
+
   if (items.length === 0) {
-    throw new Error("Provide channel, channels, or from/thru for selection.");
+    throw new Error("Provide channel, channels, ranges, or from/thru for selection.");
   }
 
   for (const item of items) {
@@ -57,6 +84,11 @@ export async function sendChannelSelection(
     if (item === "plus") {
       await tapKey(ctx, keyPress("+"));
       sent.push("/eos/key/+");
+      continue;
+    }
+    if (item === "minus") {
+      await tapKey(ctx, keyPress("_-%"));
+      sent.push("/eos/key/_-%");
       continue;
     }
     await ctx.client.send(channelSelect(), item);

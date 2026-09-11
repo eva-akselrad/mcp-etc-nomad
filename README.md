@@ -6,7 +6,8 @@ TypeScript [Model Context Protocol](https://modelcontextprotocol.io) server for 
 
 Control ETCnomad and Eos desks over **OSC** so an LLM can operate cues, levels, subs, macros, and the full Eos command line.
 
-> See **[PLAN.md](./PLAN.md)** for the full roadmap to operator parity.
+> See **[PLAN.md](./PLAN.md)** for the full roadmap to operator parity.  
+> Lighting-ops pack API: **[mcp-etc-nomad-specs/LIGHTING_OPS_SPEC.md](./mcp-etc-nomad-specs/LIGHTING_OPS_SPEC.md)** (LOCKED).
 
 ## Phase status
 
@@ -14,26 +15,26 @@ Control ETCnomad and Eos desks over **OSC** so an LLM can operate cues, levels, 
 |-------|--------|
 | 0 Foundation | Implemented |
 | 1 Playback parity | Implemented |
-| **2 Programming parity** | **Implemented** |
+| 2 Programming parity | Implemented |
 | 2.5 Lighting Expert pack | **Implemented** |
-| 3 Show & system admin | Partial (`show_save`; full load/merge/export pending) |
+| **3 Show & system admin** | **Implemented** |
 | 4 Hardening & distribution | Not started |
 
 ## Phase 1 (playback)
 
 Live-write tools require `confirm=true` when `EOS_REQUIRE_CONFIRM=true` (default) and `allow_live=true` when the console is **LIVE** (or state is unknown) and `EOS_ALLOW_LIVE=false` (default). Read `get_console_state` / `eos://playback/state` first.
 
-**Intensity scales:** channel/group levels are **0–100** (percent). Faders, subs, and grandmaster use **0.0–1.0**. Cue-fire rate limit (default 12/min) is bypassed with `override_rate_limit=true` — `confirm` does **not** bypass rate limits.
+**Intensity scales:** channel/group levels are **0–100** (percent). Faders and subs use **0.0–1.0**. Grand master tool API is **0–100** (mapped to `/eos/fader/0/1`). Cue-fire rate limit (default 12/min) is bypassed with `override_rate_limit=true` — `confirm` does **not** bypass rate limits.
 
 | Group | Tools |
 |-------|--------|
 | Playback | `go_to_cue` (CLI GTC preferred), `cue_select`, `cue_fire`, `cue_go`, `cue_hold`, `cue_back`, `cue_resume`, `cue_stop` (deprecated→hold), `cue_list_go`, `get_active_cue`, `get_pending_cues` |
-| GM / BO | `grandmaster_set_level` (0–1), `blackout` (BO key — never Chan Thru Out) |
+| GM / BO | `grandmaster_set_level` (0–100 → fader 0/1), `blackout` (BO key — separate from GM=0) |
 | Channel check | `highlight`, `rem_dim`, `timing_disable`, `sneak`, `home` |
 | Park | `park_channel`, `unpark_channel`, `get_parked` |
 | Cue list banks | `cue_list_bank_config`, `cue_list_bank_page`, `cue_list_bank_select`, `cue_list_bank_reset` |
-| Faders / subs | `fader_bank_config`, `fader_set_level`, `fader_load` / `_unload` / `_stop` / `_fire`, `fader_bank_page`, `fader_bank_reset`, `submaster_set_level`, `submaster_fire`, `submaster_select` |
-| Palettes / presets | `palette_select`, `palette_fire`, `preset_select`, `preset_fire` |
+| Faders / subs | `fader_bank_config`, `fader_set_level`, `fader_load` / `_unload` / `_stop` / `_fire`, `fader_bank_page`, `fader_bank_reset`, `submaster_set_level`, `submaster_bump` (`submaster_fire` alias), `submaster_select` |
+| Palettes / presets | `palette_select`, `palette_recall` (`palette_fire` alias), `preset_select`, `preset_recall` (`preset_fire` alias) |
 | Keys / macros | `key_press`, `softkey_press`, `macro_select`, `macro_fire`, `staging_mode_toggle`, `list_osc_keys` |
 | Direct selects | `direct_select_bank_create`, `direct_select_bank_page`, `direct_select_press` |
 | Command line | `eos_command`, `eos_new_command`, `eos_event` |
@@ -53,7 +54,7 @@ Programming writes use the same `confirm` / `allow_live` gates as playback. Dest
 
 | Group | Tools |
 |-------|--------|
-| Record / update | `record_cue`, `update_cue`, `make_manual`, `set_cue_timing`, `record_group`, `record_preset`, `record_palette`, `show_save` (Shift+Update quick-save) |
+| Record / update | `record_cue`, `update_cue`, `make_manual`, `set_cue_timing`, `record_group`, `record_preset`, `record_palette` |
 | Copy / move / delete | `copy_target`, `move_target`, `delete_target` (+ `confirm_delete`) |
 | OSC set | `label_target`, `group_set_channels` (`/eos/set/...`; Thru as `>`) |
 | Patch | `patch_channel`, `patch_copy_to`, `patch_move`, `unpatch_channel` |
@@ -65,6 +66,25 @@ Programming writes use the same `confirm` / `allow_live` gates as playback. Dest
 **Prompts:** `eos-programmer`, `eos-patch`
 
 Sync uses OSC `/eos/get/*` request/response (node-eos-console / EosSyncLib pattern): count → index → cache in listener state. Subscribe with `/eos/subscribe` + int arg `1` on sync (default).
+
+## Phase 3 (show & system admin)
+
+Eos OSC domain rules: **no OSC Save/Load verbs** — Browser + `key_press` + CLI only. Never invent `usb1:/` or `.esf` paths.
+
+| Group | Tools |
+|-------|--------|
+| Show files | **`show_save`** (priority: `confirm_save` + path echo), `show_load`, `show_merge`, `show_export`; `get_show_path` |
+| Patch extras | `attach_patch_device`, `detach_patch_device` |
+| Troubleshoot | `identify_fixture`, `channel_check`, `highlight_channels` |
+| Network | `get_session_info`, `osc_set_user`, `network_session_join`, `network_session_leave` |
+
+**Gates:** `user_intent` for load/merge/join; `confirm_save` / `confirm_path` when `EOS_REQUIRE_CONFIRM=true`. Prefer Blind for load/merge. After load/merge, `sync_show_targets` + reconfigure banks.
+
+**TCP transport (real TCP OSC, not UDP retarget):** `EOS_PROTOCOL=tcp`. `3032` = OSC TCP 1.0 length headers (bidirectional); `3037` = Third Party OSC 1.1 SLIP (~realtime `/eos/out`). Custom ports OK (4703–4727+). Enable OSC RX+TX in Setup. UDP remains default; ETC prefers TCP.
+
+**Resources:** `eos://console/info`, `eos://console/session`, `eos://console/version`, `eos://show/path`
+
+**Prompts:** `nomad-setup`, `eos-showfile`
 
 ## Quick start
 
@@ -152,7 +172,7 @@ src/
 │   └── context.ts        # Shared context + live/confirm gates
 ├── tools/                # MCP tools (Phase 0–2)
 ├── resources/            # MCP resources (playback + show)
-└── prompts/              # eos-operator, eos-live, eos-programmer, eos-patch
+└── prompts/              # eos-operator, eos-live, eos-programmer, eos-patch, nomad-setup
 ```
 
 ## License

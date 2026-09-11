@@ -3,21 +3,8 @@ import * as z from "zod/v4";
 import { atLevel, channelDmx, channelLevel } from "../eos/addresses.js";
 import type { EosContext } from "../eos/context.js";
 import { sendChannelSelection, sendGroupSelection, sendLevelAdjust } from "../eos/selection.js";
+import { channelSelectionFields, groupSelectionFields } from "../specs/lighting-ops.js";
 import { gateLiveWrite, jsonResult, liveWriteFields } from "./helpers.js";
-
-const channelSelectionFields = {
-  channel: z.number().int().positive().optional(),
-  channels: z.array(z.number().int().positive()).optional(),
-  from: z.number().int().positive().optional(),
-  thru: z.number().int().positive().optional(),
-};
-
-const groupSelectionFields = {
-  group: z.number().int().positive().optional(),
-  groups: z.array(z.number().int().positive()).optional(),
-  from: z.number().int().positive().optional(),
-  thru: z.number().int().positive().optional(),
-};
 
 export function registerLevelTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
@@ -61,7 +48,8 @@ export function registerLevelTools(server: McpServer, ctx: EosContext): void {
       const hasSelection =
         selection.channel !== undefined ||
         selection.from !== undefined ||
-        (selection.channels?.length ?? 0) > 0;
+        (selection.channels?.length ?? 0) > 0 ||
+        (selection.ranges?.length ?? 0) > 0;
 
       if (hasSelection) {
         steps.push(...(await sendChannelSelection(ctx, selection)));

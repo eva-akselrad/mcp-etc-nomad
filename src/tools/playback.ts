@@ -11,9 +11,25 @@ import {
 import { buildCommand } from "../eos/command.js";
 import type { EosContext } from "../eos/context.js";
 import { buildGoToCueCommand } from "../eos/programming.js";
+import { goToCueBaseSchema, refineGoToCueXor } from "../specs/lighting-ops.js";
 import { cueFireFields, gateCueFire, gateLiveWrite, jsonResult, liveWriteFields, sendButton } from "./helpers.js";
 
 const cueNumber = z.union([z.number(), z.string()]);
+
+const goToCueInputSchema = refineGoToCueXor({
+  ...goToCueBaseSchema.shape,
+  time: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("Fade time override prepended via CLI; 0 = slam (Assert). Omit for cue's own time."),
+  assert: z
+    .number()
+    .optional()
+    .default(0)
+    .describe("Assert time when time=0 (default 0)."),
+  method: z.enum(["cli", "key"]).optional().default("cli"),
+  ...cueFireFields,
+});
 
 async function sendCliStep(ctx: EosContext, line: string): Promise<string> {
   const cmd = buildCommand(line, "enter");
@@ -47,27 +63,21 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
     {
       description:
         "Go To Cue (GTC) via CLI /eos/newcmd (preferred): 'Go To Cue 5', 'Go To Cue 1/10', 'Go To Cue Out'. NOT /eos/cue/.../fire or /eos/key/go_0. Optional method=key uses /eos/key/go_to_cue.",
-      inputSchema: z.object({
-        cue: cueNumber.optional(),
-        cueList: z.number().int().positive().optional(),
-        out: z.boolean().optional().describe("Go To Cue Out (fade out current look)."),
-        time: z
-          .union([z.number(), z.string()])
-          .optional()
-          .describe("Fade time override prepended via CLI; 0 = slam (Assert). Omit for cue's own time."),
-        assert: z
-          .number()
-          .optional()
-          .default(0)
-          .describe("Assert time when time=0 (default 0)."),
-        method: z.enum(["cli", "key"]).optional().default("cli"),
-        ...cueFireFields,
-      }),
+      inputSchema: goToCueInputSchema,
       annotations: { destructiveHint: true },
     },
     async ({ cue, cueList, out, time, assert, method, confirm, allow_live, override_rate_limit }) => {
       const blocked = gateCueFire(ctx, { confirm, allow_live, override_rate_limit });
       if (blocked) return blocked;
+
+      const hasCue = cue !== undefined;
+      const hasOut = out === true;
+      if (hasCue === hasOut) {
+        return jsonResult(
+          { ok: false, error: "Provide cue OR out=true (XOR), not both and not neither." },
+          true
+        );
+      }
 
       const steps: string[] = [];
       const transport = method ?? "cli";

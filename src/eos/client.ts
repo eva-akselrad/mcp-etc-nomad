@@ -2,20 +2,31 @@ import { appendFile } from "node:fs/promises";
 import { Client } from "node-osc";
 import type { ServerConfig } from "../config.js";
 import { withUserPrefix } from "./addresses.js";
+import type { EosTcpLink } from "./tcp-link.js";
 
 export class EosClient {
-  private client: Client;
+  private udpClient: Client | null = null;
   private readonly config: ServerConfig;
+  private readonly tcpLink?: EosTcpLink;
 
-  constructor(config: ServerConfig) {
+  constructor(config: ServerConfig, tcpLink?: EosTcpLink) {
     this.config = config;
-    const port = config.protocol === "tcp" ? config.tcpPort : config.portTx;
-    this.client = new Client(config.host, port);
+    this.tcpLink = tcpLink;
+    if (config.protocol !== "tcp") {
+      this.udpClient = new Client(config.host, config.portTx);
+    }
   }
 
   async send(address: string, ...args: unknown[]): Promise<void> {
     const resolved = withUserPrefix(this.config, address);
-    await this.client.send(resolved, ...args);
+    if (this.config.protocol === "tcp") {
+      if (!this.tcpLink) {
+        throw new Error("TCP protocol requires a shared EosTcpLink instance.");
+      }
+      await this.tcpLink.send(resolved, ...args);
+    } else {
+      await this.udpClient!.send(resolved, ...args);
+    }
     await this.audit(`SEND ${resolved} ${args.map(formatArg).join(" ")}`.trim());
   }
 
@@ -24,7 +35,11 @@ export class EosClient {
   }
 
   async close(): Promise<void> {
-    await this.client.close();
+    if (this.config.protocol === "tcp") {
+      await this.tcpLink?.close();
+      return;
+    }
+    await this.udpClient?.close();
   }
 
   private async audit(line: string): Promise<void> {

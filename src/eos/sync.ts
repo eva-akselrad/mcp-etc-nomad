@@ -1,6 +1,7 @@
 import {
   getCueCount,
   getCueIndex,
+  getCueIndexPrimary,
   getCueListCount,
   getCueListIndex,
   getGroupCount,
@@ -230,16 +231,41 @@ async function syncCuesForList(
     new RegExp(`^/eos/out/get/cue/${cueList}/noparts/count$`),
     timeoutMs
   );
-  const count = Number(countMsg.args[0] ?? 0);
+  let count = Number(countMsg.args[0] ?? 0);
 
-  for (let index = 0; index < count; index++) {
-    await client.send(getCueIndex(cueList), index);
-    await listener.waitFor(outGetList0(`cue/${cueList}/[^/]+/0`), timeoutMs);
-    await sleep(INDEX_STEP_MS);
+  if (count === 0) {
+    count = await syncCuesViaPrimaryIndex(client, listener, cueList, timeoutMs);
+  } else {
+    for (let index = 0; index < count; index++) {
+      await client.send(getCueIndex(cueList), index);
+      await listener.waitFor(outGetList0(`cue/${cueList}/[^/]+/0`), timeoutMs);
+      await sleep(INDEX_STEP_MS);
+    }
   }
 
   listener.getState().syncStatus.cuesAt[String(cueList)] = new Date().toISOString();
   return count;
+}
+
+/** Dictionary-primary /eos/get/cue/{list}/index when noparts returns empty. */
+async function syncCuesViaPrimaryIndex(
+  client: EosClient,
+  listener: EosListener,
+  cueList: number,
+  timeoutMs: number
+): Promise<number> {
+  let index = 0;
+  while (true) {
+    await client.send(getCueIndexPrimary(cueList), index);
+    try {
+      await listener.waitFor(outGetList0(`cue/${cueList}/[^/]+/0`), timeoutMs);
+      index++;
+      await sleep(INDEX_STEP_MS);
+    } catch {
+      break;
+    }
+  }
+  return index;
 }
 
 async function syncPresetsFromConsole(
