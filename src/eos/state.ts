@@ -3,7 +3,21 @@ export type ConsoleMode = "blind" | "live" | "unknown";
 export interface ActiveCueState {
   text?: string;
   percent?: number;
+  cueList?: number;
+  cue?: number | string;
+  part?: number;
   raw?: unknown;
+}
+
+export interface PendingCueState {
+  text?: string;
+  entries: Record<string, unknown>;
+}
+
+export interface FaderBankState {
+  levels: Record<string, number>;
+  labels: Record<string, string>;
+  page?: string;
 }
 
 export interface EosState {
@@ -13,9 +27,11 @@ export interface EosState {
   oscUserId?: number;
   commandLine?: string;
   activeCue: ActiveCueState;
+  pendingCue: PendingCueState;
   activeChannels?: string;
-  pendingCues: Record<string, unknown>;
-  faderLevels: Record<string, number>;
+  faderBanks: Record<string, FaderBankState>;
+  cueListBanks: Record<string, unknown>;
+  directSelectBanks: Record<string, unknown>;
   labels: Record<string, string>;
 }
 
@@ -24,8 +40,10 @@ export function createInitialState(): EosState {
     connected: false,
     consoleMode: "unknown",
     activeCue: {},
-    pendingCues: {},
-    faderLevels: {},
+    pendingCue: { entries: {} },
+    faderBanks: {},
+    cueListBanks: {},
+    directSelectBanks: {},
     labels: {},
   };
 }

@@ -2,7 +2,12 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { atLevel, channelLevel, channelSelect, groupLevel } from "../eos/addresses.js";
 import type { EosContext } from "../eos/context.js";
-import { assertLiveAllowed } from "../eos/context.js";
+import { checkLiveWrite, toolError, toolResult } from "./helpers.js";
+
+const liveSchema = {
+  confirm: z.boolean().optional(),
+  allowLive: z.boolean().optional(),
+};
 
 export function registerLevelTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
@@ -15,9 +20,7 @@ export function registerLevelTools(server: McpServer, ctx: EosContext): void {
     },
     async ({ channel }) => {
       await ctx.client.send(channelSelect(), channel);
-      return {
-        content: [{ type: "text" as const, text: `Selected channel ${channel}` }],
-      };
+      return toolResult({ channel });
     }
   );
 
@@ -28,25 +31,16 @@ export function registerLevelTools(server: McpServer, ctx: EosContext): void {
       inputSchema: z.object({
         channel: z.number().int().positive(),
         level: z.number().min(0).max(100),
-        confirm: z.boolean().optional(),
+        ...liveSchema,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ channel, level, confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
-      }
+    async ({ channel, level, confirm, allowLive }) => {
+      const blocked = checkLiveWrite(ctx, { confirm, allowLive });
+      if (blocked) return toolError(blocked);
 
       await ctx.client.send(channelLevel(channel), level);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ channel, level }, null, 2),
-          },
-        ],
-      };
+      return toolResult({ channel, level });
     }
   );
 
@@ -57,20 +51,16 @@ export function registerLevelTools(server: McpServer, ctx: EosContext): void {
       inputSchema: z.object({
         channel: z.number().int().positive(),
         dmx: z.number().int().min(0).max(255),
-        confirm: z.boolean().optional(),
+        ...liveSchema,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ channel, dmx, confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
-      }
+    async ({ channel, dmx, confirm, allowLive }) => {
+      const blocked = checkLiveWrite(ctx, { confirm, allowLive });
+      if (blocked) return toolError(blocked);
 
       await ctx.client.send(`${channelLevel(channel)}/DMX`, dmx);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify({ channel, dmx }, null, 2) }],
-      };
+      return toolResult({ channel, dmx });
     }
   );
 
@@ -81,20 +71,16 @@ export function registerLevelTools(server: McpServer, ctx: EosContext): void {
       inputSchema: z.object({
         group: z.number().int().positive(),
         level: z.number().min(0).max(100),
-        confirm: z.boolean().optional(),
+        ...liveSchema,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ group, level, confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
-      }
+    async ({ group, level, confirm, allowLive }) => {
+      const blocked = checkLiveWrite(ctx, { confirm, allowLive });
+      if (blocked) return toolError(blocked);
 
       await ctx.client.send(groupLevel(group), level);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify({ group, level }, null, 2) }],
-      };
+      return toolResult({ group, level });
     }
   );
 
@@ -104,20 +90,16 @@ export function registerLevelTools(server: McpServer, ctx: EosContext): void {
       description: "Set level for the current OSC selection via /eos/at",
       inputSchema: z.object({
         level: z.number().min(0).max(100),
-        confirm: z.boolean().optional(),
+        ...liveSchema,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ level, confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
-      }
+    async ({ level, confirm, allowLive }) => {
+      const blocked = checkLiveWrite(ctx, { confirm, allowLive });
+      if (blocked) return toolError(blocked);
 
       await ctx.client.send(atLevel(), level);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify({ level }, null, 2) }],
-      };
+      return toolResult({ level });
     }
   );
 }

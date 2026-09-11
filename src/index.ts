@@ -5,7 +5,7 @@ import { loadConfig } from "./config.js";
 import { EosClient } from "./eos/client.js";
 import type { EosContext } from "./eos/context.js";
 import { EosListener } from "./eos/listener.js";
-import { registerPrompts } from "./prompts/operator.js";
+import { registerPrompts } from "./prompts/index.js";
 import { registerResources } from "./resources/index.js";
 import { registerTools } from "./tools/index.js";
 

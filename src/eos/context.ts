@@ -8,15 +8,22 @@ export interface EosContext {
   listener: EosListener;
 }
 
-export function assertLiveAllowed(ctx: EosContext, confirm?: boolean): string | null {
+export interface LiveWriteOptions {
+  confirm?: boolean;
+  allowLive?: boolean;
+}
+
+export function assertLiveAllowed(ctx: EosContext, options?: LiveWriteOptions): string | null {
+  const { confirm, allowLive } = options ?? {};
   const state = ctx.listener.getState();
-  if (state.consoleMode === "live" && !ctx.config.allowLive) {
-    if (!confirm) {
-      return "Console is LIVE. Pass confirm=true to execute, or set EOS_ALLOW_LIVE=true.";
-    }
-  }
+
   if (ctx.config.requireConfirm && !confirm) {
     return "Pass confirm=true to execute this action.";
   }
+
+  if (state.consoleMode === "live" && !ctx.config.allowLive && !allowLive) {
+    return "Console is LIVE. Pass allow_live=true on this call, or set EOS_ALLOW_LIVE=true.";
+  }
+
   return null;
 }

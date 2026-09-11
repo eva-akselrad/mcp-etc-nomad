@@ -7,18 +7,25 @@ export function registerPlaybackResources(server: McpServer, ctx: EosContext): v
     "eos://playback/active",
     {
       title: "Active cue",
-      description: "Currently running cue text and completion from OSC cache",
+      description: "Currently running cue text, percent, and parsed list/cue from OSC cache",
       mimeType: "application/json",
     },
-    async (uri) => ({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: "application/json",
-          text: JSON.stringify(ctx.listener.getState().activeCue, null, 2),
-        },
-      ],
-    })
+    async (uri) => {
+      const state = ctx.listener.getState();
+      const payload = {
+        ...state.activeCue,
+        lastSyncedAt: state.lastMessageAt,
+      };
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(payload, null, 2),
+          },
+        ],
+      };
+    }
   );
 
   server.registerResource(
@@ -26,7 +33,7 @@ export function registerPlaybackResources(server: McpServer, ctx: EosContext): v
     "eos://playback/state",
     {
       title: "Console playback state",
-      description: "Blind/live mode, OSC user, connection metadata",
+      description: "Blind/live mode, pending cue, fader banks, connection metadata",
       mimeType: "application/json",
     },
     async (uri) => {
@@ -35,9 +42,13 @@ export function registerPlaybackResources(server: McpServer, ctx: EosContext): v
         consoleMode: state.consoleMode,
         oscUserId: state.oscUserId,
         connected: state.connected,
-        lastMessageAt: state.lastMessageAt,
+        lastSyncedAt: state.lastMessageAt,
         commandLine: state.commandLine,
         activeChannels: state.activeChannels,
+        pendingCue: state.pendingCue,
+        faderBanks: state.faderBanks,
+        cueListBanks: state.cueListBanks,
+        directSelectBanks: state.directSelectBanks,
       };
       return {
         contents: [

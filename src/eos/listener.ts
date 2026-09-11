@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { Server } from "node-osc";
 import type { ServerConfig } from "../config.js";
-import { createInitialState, type EosState } from "./state.js";
+import { createInitialState, type EosState, type FaderBankState } from "./state.js";
 
 export interface OscMessage {
   address: string;
@@ -85,6 +85,14 @@ export class EosListener extends EventEmitter {
     });
   }
 
+  private faderBank(bank: string): FaderBankState {
+    const existing = this.state.faderBanks[bank];
+    if (existing) return existing;
+    const created: FaderBankState = { levels: {}, labels: {} };
+    this.state.faderBanks[bank] = created;
+    return created;
+  }
+
   private updateState(message: OscMessage): void {
     const { address, args } = message;
 
@@ -109,17 +117,51 @@ export class EosListener extends EventEmitter {
       this.state.activeCue.percent = Number(args[0]);
     }
 
+    const activeCueMatch = address.match(/^\/eos\/out\/active\/cue\/(\d+)\/(.+)$/);
+    if (activeCueMatch && typeof args[0] === "number") {
+      this.state.activeCue.cueList = Number(activeCueMatch[1]);
+      this.state.activeCue.cue = activeCueMatch[2];
+      this.state.activeCue.percent = args[0];
+    }
+
     if (address === "/eos/out/active/chan") {
       this.state.activeChannels = String(args[0] ?? "");
     }
 
-    const faderMatch = address.match(/^\/eos\/out\/fader\/(\d+)\/(\d+)$/);
-    if (faderMatch && typeof args[0] === "number") {
-      this.state.faderLevels[`${faderMatch[1]}/${faderMatch[2]}`] = args[0];
+    if (address === "/eos/out/pending/cue/text") {
+      this.state.pendingCue.text = String(args[0] ?? "");
     }
 
     if (address.startsWith("/eos/out/pending/cue")) {
-      this.state.pendingCues[address] = args;
+      this.state.pendingCue.entries[address] = args;
+    }
+
+    const faderLevelMatch = address.match(/^\/eos\/out\/fader\/(\d+)\/(\d+)$/);
+    if (faderLevelMatch && typeof args[0] === "number") {
+      const bank = this.faderBank(faderLevelMatch[1]);
+      bank.levels[faderLevelMatch[2]] = args[0];
+    }
+
+    const faderLabelMatch = address.match(/^\/eos\/out\/fader\/(\d+)\/(\d+)\/name$/);
+    if (faderLabelMatch && typeof args[0] === "string") {
+      const bank = this.faderBank(faderLabelMatch[1]);
+      bank.labels[faderLabelMatch[2]] = args[0];
+    }
+
+    const faderPageMatch = address.match(/^\/eos\/out\/fader\/(\d+)$/);
+    if (faderPageMatch && typeof args[0] === "string") {
+      const bank = this.faderBank(faderPageMatch[1]);
+      bank.page = args[0];
+    }
+
+    const cueListMatch = address.match(/^\/eos\/out\/cuelist\/(\d+)/);
+    if (cueListMatch) {
+      this.state.cueListBanks[cueListMatch[1]] = { address, args };
+    }
+
+    const dsMatch = address.match(/^\/eos\/out\/ds\/(\d+)/);
+    if (dsMatch) {
+      this.state.directSelectBanks[dsMatch[1]] = { address, args };
     }
   }
 }

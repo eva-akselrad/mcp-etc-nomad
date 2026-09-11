@@ -8,24 +8,28 @@ Control ETCnomad and Eos desks over **OSC** so an LLM can operate cues, levels, 
 
 > See **[PLAN.md](./PLAN.md)** for the full roadmap to operator parity.
 
-## Phase 0 (implemented)
+## Phase status
 
-| Tool | Description |
-|------|-------------|
-| `eos_command` | Send any Eos CLI string via `/eos/cmd` |
-| `eos_new_command` | Clear line, then send via `/eos/newcmd` |
-| `eos_event` | Send via `/eos/event` |
-| `channel_select` / `channel_set_level` / `channel_set_dmx` | Channel control |
-| `group_set_level` / `at_set_level` | Group and selection levels |
-| `cue_select` / `cue_fire` / `cue_go` | Cue playback |
-| `key_press` / `macro_fire` / `submaster_set_level` | Keys, macros, subs |
-| `magic_sheet_open` | Open magic sheets |
-| `get_console_state` / `get_active_cue` / `get_command_line` | Read cached OSC state |
-| `wait_for_osc` / `osc_reset` | OSC utilities |
+### Phase 0 — Foundation (done)
 
-**Resources:** `eos://playback/active`, `eos://playback/state`
+Core OSC bridge, command line, basic levels/playback, listener cache, `eos-operator` prompt.
 
-**Prompts:** `eos-operator`
+### Phase 1 — Playback parity (done)
+
+| Group | Tools |
+|-------|-------|
+| Playback | `cue_select`, `cue_fire`, `cue_go`, `cue_list_bank_*`, `get_active_cue`, `get_pending_cues` |
+| Faders & subs | `fader_bank_config`, `fader_set_level`, `fader_load/unload/stop/fire`, `fader_bank_page`, `submaster_set_level`, `submaster_fire` |
+| Palettes & presets | `palette_select/fire`, `preset_select/fire` |
+| Keys & macros | `key_press`, `softkey_press`, `macro_select/fire`, `staging_mode_toggle`, `list_osc_keys`, `resolve_osc_key` |
+| Direct selects | `direct_select_bank_create`, `direct_select_bank_page`, `direct_select_press` |
+| Queries | `get_console_state`, `get_fader_labels_levels`, `wait_for_osc`, `osc_reset` |
+
+**Resources:** `eos://playback/active`, `eos://playback/state` (pending cue + fader bank cache)
+
+**Prompts:** `eos-operator`, `eos-live`
+
+**Safety:** Live-write tools accept `confirm` and `allow_live` per `EOS_REQUIRE_CONFIRM` / `EOS_ALLOW_LIVE`.
 
 ## Quick start
 
@@ -88,7 +92,7 @@ src/
 │   ├── addresses.ts      # OSC path builders
 │   ├── command.ts        # CLI terminators
 │   └── context.ts        # Shared context + safety
-├── tools/                # MCP tools (Phase 0 + stubs)
+├── tools/                # MCP tools by domain
 ├── resources/            # MCP resources
 └── prompts/              # MCP prompts
 ```

@@ -2,7 +2,12 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { cueFire, cueSelect, keyPress, macroFire, magicSheet, subLevel } from "../eos/addresses.js";
 import type { EosContext } from "../eos/context.js";
-import { assertLiveAllowed } from "../eos/context.js";
+import { checkLiveWrite, toolError, toolResult } from "./helpers.js";
+
+const liveSchema = {
+  confirm: z.boolean().optional(),
+  allowLive: z.boolean().optional(),
+};
 
 export function registerPlaybackTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
@@ -17,9 +22,7 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
     async ({ cue, cueList }) => {
       const address = cueSelect(cueList);
       await ctx.client.send(address, cue);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify({ cueList, cue }, null, 2) }],
-      };
+      return toolResult({ cueList, cue, address });
     }
   );
 
@@ -30,20 +33,17 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
       inputSchema: z.object({
         cue: z.union([z.number(), z.string()]),
         cueList: z.number().int().positive().optional(),
-        confirm: z.boolean().optional(),
+        ...liveSchema,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ cue, cueList, confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
-      }
+    async ({ cue, cueList, confirm, allowLive }) => {
+      const blocked = checkLiveWrite(ctx, { confirm, allowLive });
+      if (blocked) return toolError(blocked);
 
-      await ctx.client.send(cueFire(cueList, cue), cue);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify({ cueList, cue }, null, 2) }],
-      };
+      const address = cueFire(cueList, cue);
+      await ctx.client.send(address, cue);
+      return toolResult({ cueList, cue, address });
     }
   );
 
@@ -52,37 +52,33 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
     {
       description: "Press the console Go key (sequential cue advance)",
       inputSchema: z.object({
-        confirm: z.boolean().optional(),
+        ...liveSchema,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
-      }
+    async ({ confirm, allowLive }) => {
+      const blocked = checkLiveWrite(ctx, { confirm, allowLive });
+      if (blocked) return toolError(blocked);
 
       await ctx.client.send(keyPress("go"), 0);
-      return { content: [{ type: "text" as const, text: "Go pressed" }] };
+      return toolResult({ action: "go" });
     }
   );
 
   server.registerTool(
     "key_press",
     {
-      description: "Press an Eos hardkey by OSC name (e.g. 'go', 'clear', 'stop')",
+      description: "Press an Eos hardkey by OSC name (e.g. 'go', 'clear', 'stop'). Use list_osc_keys.",
       inputSchema: z.object({
         key: z.string().describe("OSC key name from Eos Virtual Keyboard"),
         edge: z.enum(["down", "up", "tap"]).optional(),
-        confirm: z.boolean().optional(),
+        ...liveSchema,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ key, edge, confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
-      }
+    async ({ key, edge, confirm, allowLive }) => {
+      const blocked = checkLiveWrite(ctx, { confirm, allowLive });
+      if (blocked) return toolError(blocked);
 
       const address = keyPress(key);
       if (edge === "tap" || edge === undefined) {
@@ -91,7 +87,7 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
         await ctx.client.send(address, edge === "down" ? 1.0 : 0.0);
       }
 
-      return { content: [{ type: "text" as const, text: JSON.stringify({ key, edge }, null, 2) }] };
+      return toolResult({ key, edge, address });
     }
   );
 
@@ -101,18 +97,16 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
       description: "Run a macro by number",
       inputSchema: z.object({
         macro: z.number().int().positive(),
-        confirm: z.boolean().optional(),
+        ...liveSchema,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ macro, confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
-      }
+    async ({ macro, confirm, allowLive }) => {
+      const blocked = checkLiveWrite(ctx, { confirm, allowLive });
+      if (blocked) return toolError(blocked);
 
       await ctx.client.send(macroFire(), macro);
-      return { content: [{ type: "text" as const, text: `Macro ${macro} fired` }] };
+      return toolResult({ macro });
     }
   );
 
@@ -123,20 +117,16 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
       inputSchema: z.object({
         sub: z.number().int().positive(),
         level: z.number().min(0).max(1),
-        confirm: z.boolean().optional(),
+        ...liveSchema,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ sub, level, confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
-      }
+    async ({ sub, level, confirm, allowLive }) => {
+      const blocked = checkLiveWrite(ctx, { confirm, allowLive });
+      if (blocked) return toolError(blocked);
 
       await ctx.client.send(subLevel(sub), level);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify({ sub, level }, null, 2) }],
-      };
+      return toolResult({ sub, level });
     }
   );
 
@@ -151,9 +141,7 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
     },
     async ({ sheet, view }) => {
       await ctx.client.send(magicSheet(sheet, view), view ?? sheet);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify({ sheet, view }, null, 2) }],
-      };
+      return toolResult({ sheet, view });
     }
   );
 }

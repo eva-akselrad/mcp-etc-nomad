@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { oscReset } from "../eos/addresses.js";
 import type { EosContext } from "../eos/context.js";
+import { toolError, toolResult } from "./helpers.js";
 
 export function registerQueryTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
@@ -11,12 +12,7 @@ export function registerQueryTools(server: McpServer, ctx: EosContext): void {
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
-    async () => {
-      const state = ctx.listener.getState();
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(state, null, 2) }],
-      };
-    }
+    async () => toolResult(ctx.listener.getState())
   );
 
   server.registerTool(
@@ -26,12 +22,17 @@ export function registerQueryTools(server: McpServer, ctx: EosContext): void {
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
-    async () => {
-      const { activeCue } = ctx.listener.getState();
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(activeCue, null, 2) }],
-      };
-    }
+    async () => toolResult(ctx.listener.getState().activeCue)
+  );
+
+  server.registerTool(
+    "get_pending_cues",
+    {
+      description: "Return pending cue text and OSC pending-cue cache entries",
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
+    },
+    async () => toolResult(ctx.listener.getState().pendingCue)
   );
 
   server.registerTool(
@@ -41,16 +42,24 @@ export function registerQueryTools(server: McpServer, ctx: EosContext): void {
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
-    async () => {
-      const { commandLine } = ctx.listener.getState();
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ commandLine: commandLine ?? "" }, null, 2),
-          },
-        ],
-      };
+    async () => toolResult({ commandLine: ctx.listener.getState().commandLine ?? "" })
+  );
+
+  server.registerTool(
+    "get_fader_labels_levels",
+    {
+      description: "Return cached OSC fader bank levels, labels, and page numbers",
+      inputSchema: z.object({
+        bank: z.number().int().min(0).optional(),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ bank }) => {
+      const { faderBanks } = ctx.listener.getState();
+      if (bank === undefined) {
+        return toolResult(faderBanks);
+      }
+      return toolResult(faderBanks[String(bank)] ?? { levels: {}, labels: {} });
     }
   );
 
@@ -64,14 +73,11 @@ export function registerQueryTools(server: McpServer, ctx: EosContext): void {
     },
     async ({ confirm }) => {
       if (ctx.config.requireConfirm && !confirm) {
-        return {
-          content: [{ type: "text" as const, text: "Pass confirm=true to reset OSC state." }],
-          isError: true,
-        };
+        return toolError("Pass confirm=true to reset OSC state.");
       }
 
       await ctx.client.send(oscReset());
-      return { content: [{ type: "text" as const, text: "OSC reset sent" }] };
+      return toolResult({ action: "osc_reset" });
     }
   );
 
@@ -89,9 +95,7 @@ export function registerQueryTools(server: McpServer, ctx: EosContext): void {
     async ({ address, timeoutMs, useRegex }) => {
       const pattern = useRegex ? new RegExp(address) : address;
       const message = await ctx.listener.waitFor(pattern, timeoutMs ?? 3000);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(message, null, 2) }],
-      };
+      return toolResult(message);
     }
   );
 }

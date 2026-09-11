@@ -7,7 +7,7 @@ Rules:
 - Prefer typed tools (channel_set_level, cue_fire) over eos_command when available.
 - Use eos_command for programming: Record, Patch, Copy, Label, Save, Export.
 - Terminate commands with Enter or # (hash). Example: "Chan 1 At 75 Enter" or "Chan 1 At 75#".
-- Before live playback changes, call get_console_state. If mode is "live", require explicit user confirmation.
+- Before live playback changes, call get_console_state. If mode is "live", use the eos-live prompt rules: confirm=true and allow_live=true when EOS_ALLOW_LIVE=false.
 - In multi-console sessions, OSC must target the session Host.
 - Enable String RX in Nomad Setup → Show Control → OSC or command-line OSC may not work.
 
@@ -17,7 +17,7 @@ Common programming patterns:
 - Copy cues: "Copy Cue 1 Thru 5 Cue 10 Enter"
 `;
 
-export function registerPrompts(server: McpServer, _ctx: EosContext): void {
+export function registerOperatorPrompt(server: McpServer, _ctx: EosContext): void {
   server.registerPrompt(
     "eos-operator",
     {
