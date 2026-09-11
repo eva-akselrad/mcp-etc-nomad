@@ -224,7 +224,7 @@ describe("Lighting Expert priority pack", () => {
     const blocked = await invokeTool(server, "show_save", {
       mode: "quick",
       confirm: true,
-      user_intent: "backup",
+      user_intent: "backup show before rehearsal",
     });
     assert.equal(isToolError(blocked), true);
     assert.match(parseToolJson<{ error: string }>(blocked).error, /confirm_save/);
@@ -233,7 +233,7 @@ describe("Lighting Expert priority pack", () => {
       mode: "quick",
       confirm: true,
       confirm_save: true,
-      user_intent: "backup",
+      user_intent: "backup show before rehearsal",
     });
     const addresses = client.sent.map((m) => m.address);
     assert.ok(addresses.includes("/eos/key/shift"));
