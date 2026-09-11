@@ -20,6 +20,8 @@ import {
 } from "../eos/programming.js";
 import { sendChannelSelection, sendGroupSelection } from "../eos/selection.js";
 import {
+  buttonStateFields,
+  buttonStateToEdge,
   channelSelectionFields,
   expandChannelSelection,
   grandmasterLevelSchema,
@@ -35,12 +37,6 @@ async function sendCliStep(ctx: EosContext, line: string): Promise<string> {
   const cmd = buildCommand(line, "enter");
   await ctx.client.send("/eos/newcmd", cmd.text);
   return cmd.text;
-}
-
-function highlightEdge(state: "on" | "off" | "toggle"): "down" | "up" | "tap" {
-  if (state === "on") return "down";
-  if (state === "off") return "up";
-  return "tap";
 }
 
 export function registerOperatorTools(server: McpServer, ctx: EosContext): void {
@@ -78,69 +74,148 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
       description:
         "Console Blackout via /eos/key/blackout. Separate from grandmaster_set_level(0). Never Chan Thru Out.",
       inputSchema: z.object({
-        edge: z.enum(["down", "up", "tap"]).optional(),
+        ...buttonStateFields,
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ edge, confirm, allow_live }) => {
+    async ({ state, confirm, allow_live }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
+      const effectiveState = state ?? "toggle";
+      const edge = buttonStateToEdge(effectiveState);
       const address = keyPress("blackout");
       await sendButton(ctx, address, edge);
-      return jsonResult({ ok: true, action: "blackout", address, edge: edge ?? "tap" });
+      return jsonResult({ ok: true, action: "blackout", address, state: effectiveState, edge });
     }
   );
+
+  const parkChannelFields = {
+    ...channelSelectionFields,
+    method: z.enum(["cli", "key"]).optional().default("cli"),
+    ...liveWriteFields,
+  };
+
+  const parkChannelHandler = async ({
+    method,
+    confirm,
+    allow_live,
+    ...selection
+  }: {
+    method?: "cli" | "key";
+    confirm?: boolean;
+    allow_live?: boolean;
+    channel?: number;
+    channels?: number[];
+    ranges?: Array<{ from: number; thru: number }>;
+    from?: number;
+    thru?: number;
+    minus?: number[];
+  }) => {
+    const blocked = gateLiveWrite(ctx, { confirm, allow_live });
+    if (blocked) return blocked;
+
+    if (!hasChannelSelection(selection)) {
+      return jsonResult(
+        { ok: false, error: "Provide channel, channels, ranges, or from/thru for park." },
+        true
+      );
+    }
+
+    const steps: string[] = [];
+    const transport = method ?? "cli";
+    if (transport === "key") {
+      steps.push(...(await sendChannelSelection(ctx, selection)));
+      const address = keyPress("park");
+      await sendButton(ctx, address);
+      steps.push(address);
+    } else {
+      try {
+        steps.push(await sendCliStep(ctx, buildChannelParkCli("Park", selection)));
+      } catch (error) {
+        return jsonResult(
+          { ok: false, error: error instanceof Error ? error.message : String(error) },
+          true
+        );
+      }
+    }
+
+    const parked = expandChannelSelection(selection);
+    ctx.listener.getState().parkedChannels = [
+      ...new Set([...ctx.listener.getState().parkedChannels, ...parked]),
+    ];
+    return jsonResult({ ok: true, action: "park_channel", method: transport, steps, parked });
+  };
 
   server.registerTool(
     "park_channel",
     {
       description:
         "Park via CLI 'Chan N Park' (/eos/newcmd) or key /eos/key/park after channel select (channels/ranges/minus). Requires confirm + allow_live.",
-      inputSchema: z.object({
-        ...channelSelectionFields,
-        method: z.enum(["cli", "key"]).optional().default("cli"),
-        ...liveWriteFields,
-      }),
+      inputSchema: z.object(parkChannelFields),
       annotations: { destructiveHint: true },
     },
-    async ({ method, confirm, allow_live, ...selection }) => {
-      const blocked = gateLiveWrite(ctx, { confirm, allow_live });
-      if (blocked) return blocked;
+    parkChannelHandler
+  );
 
-      if (!hasChannelSelection(selection)) {
-        return jsonResult(
-          { ok: false, error: "Provide channel, channels, ranges, or from/thru for park." },
-          true
-        );
-      }
-
-      const steps: string[] = [];
-      const transport = method ?? "cli";
-      if (transport === "key") {
-        steps.push(...(await sendChannelSelection(ctx, selection)));
-        const address = keyPress("park");
-        await sendButton(ctx, address);
-        steps.push(address);
-      } else {
-        try {
-          steps.push(await sendCliStep(ctx, buildChannelParkCli("Park", selection)));
-        } catch (error) {
-          return jsonResult(
-            { ok: false, error: error instanceof Error ? error.message : String(error) },
-            true
-          );
-        }
-      }
-
-      const parked = expandChannelSelection(selection);
-      ctx.listener.getState().parkedChannels = [
-        ...new Set([...ctx.listener.getState().parkedChannels, ...parked]),
-      ];
-      return jsonResult({ ok: true, action: "park_channel", method: transport, steps, parked });
+  server.registerTool(
+    "park",
+    {
+      description: "Park channels (legacy alias of park_channel).",
+      inputSchema: z.object(parkChannelFields),
+      annotations: { destructiveHint: true },
+    },
+    async (args) => {
+      const result = await parkChannelHandler(args);
+      if (result.isError) return result;
+      const body = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+      body.action = "park";
+      body.canonicalAction = "park_channel";
+      return jsonResult(body);
     }
   );
+
+  const unparkChannelHandler = async ({
+    confirm,
+    allow_live,
+    ...selection
+  }: {
+    confirm?: boolean;
+    allow_live?: boolean;
+    channel?: number;
+    channels?: number[];
+    ranges?: Array<{ from: number; thru: number }>;
+    from?: number;
+    thru?: number;
+    minus?: number[];
+  }) => {
+    const blocked = gateLiveWrite(ctx, { confirm, allow_live });
+    if (blocked) return blocked;
+
+    if (!hasChannelSelection(selection)) {
+      return jsonResult(
+        { ok: false, error: "Provide channel, channels, ranges, or from/thru for unpark." },
+        true
+      );
+    }
+
+    let sent: string;
+    try {
+      sent = await sendCliStep(ctx, buildChannelParkCli("Unpark", selection));
+    } catch (error) {
+      return jsonResult(
+        { ok: false, error: error instanceof Error ? error.message : String(error) },
+        true
+      );
+    }
+
+    const unparked = expandChannelSelection(selection);
+    ctx.listener.getState().parkedChannels = ctx.listener
+      .getState()
+      .parkedChannels.filter((ch) => !unparked.includes(ch));
+    return jsonResult({ ok: true, action: "unpark_channel", sent, unparked });
+  };
 
   server.registerTool(
     "unpark_channel",
@@ -153,32 +228,26 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ confirm, allow_live, ...selection }) => {
-      const blocked = gateLiveWrite(ctx, { confirm, allow_live });
-      if (blocked) return blocked;
+    unparkChannelHandler
+  );
 
-      if (!hasChannelSelection(selection)) {
-        return jsonResult(
-          { ok: false, error: "Provide channel, channels, ranges, or from/thru for unpark." },
-          true
-        );
-      }
-
-      let sent: string;
-      try {
-        sent = await sendCliStep(ctx, buildChannelParkCli("Unpark", selection));
-      } catch (error) {
-        return jsonResult(
-          { ok: false, error: error instanceof Error ? error.message : String(error) },
-          true
-        );
-      }
-
-      const unparked = expandChannelSelection(selection);
-      ctx.listener.getState().parkedChannels = ctx.listener
-        .getState()
-        .parkedChannels.filter((ch) => !unparked.includes(ch));
-      return jsonResult({ ok: true, action: "unpark_channel", sent, unparked });
+  server.registerTool(
+    "unpark",
+    {
+      description: "Unpark channels (legacy alias of unpark_channel).",
+      inputSchema: z.object({
+        ...channelSelectionFields,
+        ...liveWriteFields,
+      }),
+      annotations: { destructiveHint: true },
+    },
+    async (args) => {
+      const result = await unparkChannelHandler(args);
+      if (result.isError) return result;
+      const body = JSON.parse(result.content[0]?.text ?? "{}") as Record<string, unknown>;
+      body.action = "unpark";
+      body.canonicalAction = "unpark_channel";
+      return jsonResult(body);
     }
   );
 
@@ -230,7 +299,7 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
       }
 
       const address = keyPress("highlight");
-      const edge = highlightEdge(effectiveState);
+      const edge = buttonStateToEdge(effectiveState);
       await sendButton(ctx, address, edge);
       steps.push(`${address} (${edge})`);
 
@@ -298,7 +367,7 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
         address = keyPress("rem_dim");
       }
 
-      const edge = highlightEdge(effectiveState);
+      const edge = buttonStateToEdge(effectiveState);
       await sendButton(ctx, address, edge);
       steps.push(`${address} (${edge})`);
 
@@ -319,38 +388,65 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
     {
       description: "Press [Timing Disable] via /eos/key/timing_disable.",
       inputSchema: z.object({
-        edge: z.enum(["down", "up", "tap"]).optional(),
+        ...buttonStateFields,
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ edge, confirm, allow_live }) => {
+    async ({ state, confirm, allow_live }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
+      const effectiveState = state ?? "toggle";
+      const edge = buttonStateToEdge(effectiveState);
       const address = keyPress("timing_disable");
       await sendButton(ctx, address, edge);
-      return jsonResult({ ok: true, action: "timing_disable", address, edge: edge ?? "tap" });
+      return jsonResult({
+        ok: true,
+        action: "timing_disable",
+        address,
+        state: effectiveState,
+        edge,
+      });
     }
   );
 
   server.registerTool(
     "sneak",
     {
-      description: "Press [Sneak] via /eos/key/sneak (or CLI Sneak via eos_command).",
+      description:
+        "Press [Sneak] via /eos/key/sneak after optional channel selection. Optional time prepends CLI Time before the key.",
       inputSchema: z.object({
+        time: timingValueSchema.optional().describe("Optional fade time before Sneak (CLI Time N)."),
         edge: z.enum(["down", "up", "tap"]).optional(),
+        ...channelSelectionFields,
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ edge, confirm, allow_live }) => {
+    async ({ time, edge, confirm, allow_live, ...selection }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
+      const steps: string[] = [];
+      if (hasChannelSelection(selection)) {
+        steps.push(...(await sendChannelSelection(ctx, selection)));
+      }
+      if (time !== undefined) {
+        steps.push(await sendCliStep(ctx, `Time ${time}`));
+      }
+
       const address = keyPress("sneak");
       await sendButton(ctx, address, edge);
-      return jsonResult({ ok: true, action: "sneak", address, edge: edge ?? "tap" });
+      steps.push(address);
+      return jsonResult({
+        ok: true,
+        action: "sneak",
+        address,
+        edge: edge ?? "tap",
+        time,
+        steps,
+      });
     }
   );
 
@@ -462,18 +558,25 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
   server.registerTool(
     "make_manual",
     {
-      description: "Make Manual via /eos/newcmd only (no OSC verb). Required after Go before Update.",
+      description:
+        "Make Manual via /eos/newcmd only (no OSC verb). Optional channels/ranges select programmer first. Required after Go before Update.",
       inputSchema: z.object({
+        ...channelSelectionFields,
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ confirm, allow_live }) => {
+    async ({ confirm, allow_live, ...selection }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
+      const steps: string[] = [];
+      if (hasChannelSelection(selection)) {
+        steps.push(...(await sendChannelSelection(ctx, selection)));
+      }
       const sent = await sendCliStep(ctx, buildMakeManualCommand());
-      return jsonResult({ ok: true, action: "make_manual", path: "/eos/newcmd", sent });
+      steps.push(sent);
+      return jsonResult({ ok: true, action: "make_manual", path: "/eos/newcmd", sent, steps });
     }
   );
 
@@ -481,18 +584,18 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
     "set_cue_timing",
     {
       description:
-        "Set cue timing (Time, Delay, Follow/Hang, down, focus/color/beam, Block) via CLI.",
+        "Set cue timing (time, delay, down, focus/color/beam, follow/hang, block) via CLI.",
       inputSchema: z.object({
         cue: z.union([z.number(), z.string()]),
         cueList: z.number().int().positive().optional(),
         part: z.number().int().positive().optional(),
-        upTime: timingValueSchema.optional(),
-        upDelay: timingValueSchema.optional(),
-        downTime: timingValueSchema.optional(),
+        time: timingValueSchema.optional(),
+        delay: timingValueSchema.optional(),
+        down: timingValueSchema.optional(),
         downDelay: timingValueSchema.optional(),
-        focusTime: timingValueSchema.optional(),
-        colorTime: timingValueSchema.optional(),
-        beamTime: timingValueSchema.optional(),
+        focus: timingValueSchema.optional(),
+        color: timingValueSchema.optional(),
+        beam: timingValueSchema.optional(),
         follow: z.boolean().optional(),
         hang: timingValueSchema.optional(),
         block: z.boolean().optional(),
