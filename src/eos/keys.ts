@@ -189,6 +189,40 @@ export const OSC_KEYS: OscKeyInfo[] = [
 
 const KEY_BY_OSC = new Map(OSC_KEYS.map((k) => [k.osc.toLowerCase(), k]));
 
+/**
+ * Virtual Keyboard names seen in some workflows but not in the public OSC Dictionary /
+ * Phase 1 `OSC_KEYS` table. Pressing them may no-op while tools falsely claim success.
+ * Verify on-console via Virtual Keyboard [Tab 7] → OSC /key Names before opt-in TX.
+ */
+export const UNVERIFIED_BROWSER_OSC_KEYS = [
+  "open_browser",
+  "save_file",
+  "open_file",
+  "export_folder",
+  "open_mirror_dialog",
+] as const;
+
+const UNVERIFIED_BROWSER_SET = new Set(
+  UNVERIFIED_BROWSER_OSC_KEYS.map((k) => k.toLowerCase())
+);
+
+export function isUnverifiedBrowserOscKey(name: string): boolean {
+  return UNVERIFIED_BROWSER_SET.has(name.trim().toLowerCase());
+}
+
+/** True when the name is in the verified Phase 1 OSC Dictionary map (or shift/update workflow tokens). */
+export function isVerifiedOscKey(name: string): boolean {
+  if (name === "shift" || name === "update") {
+    return true;
+  }
+  try {
+    const normalized = normalizeOscKey(name);
+    return KEY_BY_OSC.has(normalized.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 /** Characters allowed in an OSC key path segment after normalization. */
 const KEY_SEGMENT = /^[a-z0-9_+\-%\\.@]+$/i;
 

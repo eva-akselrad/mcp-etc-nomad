@@ -129,6 +129,7 @@ npm test
 | `test/osc-harness.test.ts` | Address builders, `assertLiveAllowed` gates, fader/cue bank TX sequencing |
 | `test/programming.test.ts` | CLI programming builders (Copy/Delete Thru), tool TX, `sync_show_targets` mock-peer integration |
 | `test/mock-osc-peer.ts` | Canned `/eos/get/*` + `/eos/out/get/*` multipart replies for sync |
+| `test/show-admin.test.ts` | Show/load/merge/export needsManual paths; verified keys only (no invented browser OSC TX) |
 
 Fader level tests assert **TX only** — Eos echoes `/eos/out/fader` after ~3s, so the harness does not expect an immediate echo.
 
@@ -164,15 +165,18 @@ src/
 ├── config.ts             # Environment config
 ├── eos/
 │   ├── client.ts         # OSC TX
-│   ├── listener.ts       # OSC RX + state cache
+│   ├── listener.ts       # OSC RX + state cache (+ multipart /list/0)
 │   ├── state.ts          # Typed desk state
 │   ├── addresses.ts      # OSC path builders
 │   ├── keys.ts           # OSC Dictionary hardkey map + aliases
 │   ├── command.ts        # CLI terminators
-│   └── context.ts        # Shared context + live/confirm gates
-├── tools/                # MCP tools (Phase 0–2)
-├── resources/            # MCP resources (playback + show)
-└── prompts/              # eos-operator, eos-live, eos-programmer, eos-patch, nomad-setup
+│   ├── context.ts        # Shared context + live/confirm gates
+│   ├── sync.ts           # sync_show_targets (/eos/get/* cache)
+│   ├── show-admin.ts     # Phase 3 show-file workflow builders
+│   └── programming.ts    # Phase 2 CLI builders
+├── tools/                # MCP tools (Phase 0–3)
+├── resources/            # MCP resources (playback + show + console)
+└── prompts/              # eos-operator, eos-live, eos-programmer, eos-patch, nomad-setup, eos-showfile
 ```
 
 ## License

@@ -36,19 +36,25 @@ describe("show-admin workflow builders (Eos OSC domain)", () => {
     assert.deepEqual(wf.steps, [""]);
   });
 
-  it("save_as opens Browser via keys only", () => {
+  it("save_as returns needsManual Browser path — no unverified keys", () => {
     const wf = buildSaveShowWorkflow({ mode: "save_as" });
-    assert.deepEqual(wf.keys, ["open_browser", "save_file"]);
+    assert.equal(wf.needsManual, true);
+    assert.match(wf.browserPath ?? "", /Save As/);
+    assert.equal(wf.keys, undefined);
     assert.deepEqual(wf.steps, []);
   });
 
-  it("load and merge are Browser workflows — no path strings", () => {
+  it("load and merge are Browser workflows — no path strings or invented keys", () => {
     const load = buildLoadShowWorkflow();
-    assert.deepEqual(load.keys, ["open_browser", "open_file"]);
+    assert.equal(load.needsManual, true);
+    assert.match(load.browserPath ?? "", /Open/);
+    assert.equal(load.keys, undefined);
     assert.ok(!load.steps.some((s) => s.includes("usb") || s.includes(".esf")));
 
     const merge = buildMergeShowWorkflow();
-    assert.deepEqual(merge.keys, ["open_browser"]);
+    assert.equal(merge.needsManual, true);
+    assert.match(merge.browserPath ?? "", /Merge/);
+    assert.equal(merge.keys, undefined);
     assert.deepEqual(merge.steps, ["Merge"]);
   });
 
@@ -57,12 +63,12 @@ describe("show-admin workflow builders (Eos OSC domain)", () => {
     assert.deepEqual(buildMergeShowWorkflow({ confirmPath: true }).steps, ["Merge", ""]);
   });
 
-  it("export returns manual browser instructions, not CLI paths", () => {
+  it("export returns manual browser instructions, not CLI paths or invented keys", () => {
     const manual = exportManualInstructions("patch");
     assert.equal(manual.needsManual, true);
     assert.match(manual.browserPath, /Browser/);
-    assert.deepEqual(manual.keys, ["open_browser", "export_folder"]);
     assert.ok(manual.notes.some((n) => n.includes("no /eos/export")));
+    assert.ok(manual.notes.some((n) => n.includes("Tab 7")));
   });
 
   it("identify uses Test Fixture two-step", () => {
@@ -156,7 +162,7 @@ describe("show_admin tools (TX via recording client)", () => {
     assert.equal(client.sent.length, 0);
   });
 
-  it("show_load opens Browser keys when allowed", async () => {
+  it("show_load returns needsManual without unverified key TX by default", async () => {
     const { server, client } = createHarness({
       consoleMode: "blind",
       config: { requireConfirm: false },
@@ -165,8 +171,24 @@ describe("show_admin tools (TX via recording client)", () => {
       user_intent: "open archived show",
     });
     assert.equal(isToolError(result), false);
-    const body = parseToolJson<{ needsManual: boolean; sent: string[] }>(result);
+    const body = parseToolJson<{ needsManual: boolean; browserPath: string; sent: string[] }>(
+      result
+    );
     assert.equal(body.needsManual, true);
+    assert.match(body.browserPath, /Open/);
+    const keys = client.sent.filter((m) => m.address.startsWith("/eos/key/"));
+    assert.equal(keys.length, 0);
+  });
+
+  it("show_load sends unverified keys only when press_unverified_browser_keys=true", async () => {
+    const { server, client } = createHarness({
+      consoleMode: "blind",
+      config: { requireConfirm: false },
+    });
+    await invokeTool(server, "show_load", {
+      user_intent: "open archived show",
+      press_unverified_browser_keys: true,
+    });
     const keys = client.sent.filter((m) => m.address.startsWith("/eos/key/"));
     assert.ok(keys.some((m) => m.address.includes("open_browser")));
     assert.ok(keys.some((m) => m.address.includes("open_file")));
@@ -232,7 +254,7 @@ describe("network session tools", () => {
     assert.equal(client.sent.length, 0);
   });
 
-  it("network_session_join opens mirror dialog key", async () => {
+  it("network_session_join returns needsManual without unverified key TX by default", async () => {
     const { server, client } = createHarness({
       consoleMode: "blind",
       config: { requireConfirm: false },
@@ -241,8 +263,21 @@ describe("network session tools", () => {
       user_intent: "join tech desk mirror",
     });
     assert.equal(isToolError(result), false);
-    const body = parseToolJson<{ needsManual: boolean }>(result);
+    const body = parseToolJson<{ needsManual: boolean; browserPath: string }>(result);
     assert.equal(body.needsManual, true);
+    assert.match(body.browserPath, /mirror|Welcome/i);
+    assert.equal(client.sent.length, 0);
+  });
+
+  it("network_session_join sends mirror key only when open_mirror_dialog=true", async () => {
+    const { server, client } = createHarness({
+      consoleMode: "blind",
+      config: { requireConfirm: false },
+    });
+    await invokeTool(server, "network_session_join", {
+      user_intent: "join tech desk mirror",
+      open_mirror_dialog: true,
+    });
     assert.equal(client.sent.at(-1)?.address, "/eos/key/open_mirror_dialog");
   });
 });

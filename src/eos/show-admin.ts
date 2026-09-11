@@ -12,8 +12,12 @@ export type ShowExportTarget =
 
 /** Browser/key workflow steps — no invented file paths or OSC Save/Load verbs. */
 export type ShowWorkflowSteps = BuiltProgrammingSteps & {
-  /** Uses OSC keys instead of /eos/newcmd when set. */
+  /** Verified OSC keys only (shift/update quick-save, etc.). */
   keys?: string[];
+  /** Operator must complete Browser / facepanel steps — default for unverified browser keys. */
+  needsManual?: boolean;
+  /** CIA navigation when needsManual (no invented usb1:/ paths). */
+  browserPath?: string;
 };
 
 const DOMAIN_NOTES = [
@@ -26,7 +30,7 @@ const DOMAIN_NOTES = [
  * Save via keys/CLI — no path parameters.
  * quick: Shift+Update (save_show key sequence).
  * save: Save CLI (may need confirm_save second Enter).
- * save_as: open_browser → save_file (CIA naming in Browser).
+ * save_as: Browser > File > Save As (needsManual — no unverified Virtual Keyboard keys).
  */
 export function buildSaveShowWorkflow(options: {
   mode?: ShowSaveMode;
@@ -53,13 +57,15 @@ export function buildSaveShowWorkflow(options: {
     const steps = options.confirmSave ? [""] : [];
     return {
       style: "two_step",
-      keys: ["open_browser", "save_file"],
+      needsManual: true,
+      browserPath: "Browser > File > Save As",
       steps,
       notes: [
         ...DOMAIN_NOTES,
-        "Save As opens Browser — user names file and picks location in CIA.",
+        "Save As is a Browser wizard — user names file and picks location in CIA.",
         "Save As often needs a second Enter on the desk confirm dialog (confirm_save).",
         "Echo saved path from show event — never invent filenames.",
+        "Unverified Virtual Keyboard keys (open_browser, save_file) are not sent unless press_unverified_browser_keys=true (Tab 7 verification).",
       ],
     };
   }
@@ -85,7 +91,8 @@ export function buildLoadShowWorkflow(options?: { confirmPath?: boolean }): Show
   const steps = options?.confirmPath ? [""] : [];
   return {
     style: "two_step",
-    keys: ["open_browser", "open_file"],
+    needsManual: true,
+    browserPath: "Browser > File > Open",
     steps,
     notes: [
       ...DOMAIN_NOTES,
@@ -93,6 +100,7 @@ export function buildLoadShowWorkflow(options?: { confirmPath?: boolean }): Show
       "Prefer Blind/offline. Never auto-load; requires explicit user_intent.",
       "After load completes, run sync_show_targets — cache is stale.",
       "Do not send /eos/reset as part of load.",
+      "Unverified Virtual Keyboard keys (open_browser, open_file) are not sent unless press_unverified_browser_keys=true (Tab 7 verification).",
     ],
   };
 }
@@ -105,13 +113,15 @@ export function buildMergeShowWorkflow(options?: { confirmPath?: boolean }): Sho
   }
   return {
     style: "two_step",
-    keys: ["open_browser"],
+    needsManual: true,
+    browserPath: "Browser > File > Merge",
     steps,
     notes: [
       ...DOMAIN_NOTES,
       "Merge is Browser File > Merge — user selects source show in CIA.",
       "Partial components need Browser {Advanced}; manual step required.",
       "Prefer Blind/offline. After merge, run sync_show_targets.",
+      "Unverified Virtual Keyboard key open_browser is not sent unless press_unverified_browser_keys=true (Tab 7 verification).",
     ],
   };
 }
@@ -121,7 +131,6 @@ export function exportManualInstructions(target: ShowExportTarget): {
   needsManual: true;
   target: ShowExportTarget;
   browserPath: string;
-  keys: string[];
   notes: string[];
 } {
   const browserPaths: Record<ShowExportTarget, string> = {
@@ -137,14 +146,23 @@ export function exportManualInstructions(target: ShowExportTarget): {
     needsManual: true,
     target,
     browserPath: browserPaths[target],
-    keys: ["open_browser", "export_folder"],
     notes: [
       ...DOMAIN_NOTES,
       "Export is a Browser wizard on most Eos versions — no /eos/export OSC verb.",
       "User selects destination and filename in CIA; do not invent usb1:/ paths.",
+      "Unverified Virtual Keyboard keys (open_browser, export_folder) are not sent unless open_browser=true (Tab 7 verification).",
     ],
   };
 }
+
+/** Unverified browser key sequences — only when operator opts in after Tab 7 verification. */
+export const UNVERIFIED_BROWSER_KEY_SEQUENCES: Record<string, string[]> = {
+  save_as: ["open_browser", "save_file"],
+  load: ["open_browser", "open_file"],
+  merge: ["open_browser"],
+  export: ["open_browser", "export_folder"],
+  join: ["open_mirror_dialog"],
+};
 
 /** Enter patch display before patch attach/detach syntax on a Live CLI. */
 export function buildPatchDisplayStep(): BuiltProgrammingSteps {
