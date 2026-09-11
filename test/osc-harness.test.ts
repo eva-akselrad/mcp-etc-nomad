@@ -10,6 +10,12 @@ import {
   directSelectBankCreate,
   faderBankConfig,
   faderLevel,
+  getCueIndex,
+  getCueListIndex,
+  getGroupIndex,
+  getPaletteIndex,
+  getPresetIndex,
+  getSubscribe,
 } from "../src/eos/addresses.js";
 import { assertLiveAllowed, type EosContext } from "../src/eos/context.js";
 import { EosClient } from "../src/eos/client.js";
@@ -50,6 +56,17 @@ describe("address builders (Dictionary OSC paths)", () => {
     assert.equal(faderLevel(1, 3), "/eos/fader/1/3");
     assert.equal(channelDmx(42), "/eos/chan/42/dmx");
     assert.doesNotMatch(channelDmx(42), /\/DMX$/);
+  });
+
+  it("OSC get index helpers use base path (index as int arg, not path segment)", () => {
+    assert.equal(getSubscribe(), "/eos/subscribe");
+    assert.equal(getGroupIndex(), "/eos/get/group/index");
+    assert.equal(getCueListIndex(), "/eos/get/cuelist/index");
+    assert.equal(getCueIndex(1), "/eos/get/cue/1/noparts/index");
+    assert.equal(getPresetIndex(), "/eos/get/preset/index");
+    assert.equal(getPaletteIndex("ip"), "/eos/get/ip/index");
+    assert.doesNotMatch(getGroupIndex(), /\/index\/\d/);
+    assert.doesNotMatch(getSubscribe(), /=/);
   });
 });
 

@@ -77,6 +77,8 @@ type SendOptions = {
   allow_live?: boolean;
   refresh_cache?: boolean;
   cueList?: number;
+  /** Metadata labels skip live/confirm gates (Dictionary /eos/set or Label CLI). */
+  gateLive?: boolean;
 };
 
 /** Programming uses /eos/newcmd — no /eos/record verb. */
@@ -85,8 +87,10 @@ async function sendProgrammingSteps(
   built: string | ReturnType<typeof buildRecordCommand>,
   options: SendOptions
 ): Promise<ReturnType<typeof jsonResult>> {
-  const blocked = gateLiveWrite(ctx, options);
-  if (blocked) return blocked;
+  if (options.gateLive !== false) {
+    const blocked = gateLiveWrite(ctx, options);
+    if (blocked) return blocked;
+  }
 
   const { steps, style, notes } = asProgrammingSteps(built);
   const sent: string[] = [];
@@ -442,13 +446,9 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         number: z.union([z.number(), z.string()]),
         label: z.string(),
         cueList: z.number().int().positive().optional(),
-        ...liveWriteFields,
       }),
     },
     async (args) => {
-      const blocked = gateLiveWrite(ctx, args);
-      if (blocked) return blocked;
-
       const n = Number(args.number);
       let path: string;
       if (args.target === "group") {
@@ -467,9 +467,8 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
           cueList: args.cueList,
         });
         return sendProgrammingSteps(ctx, text, {
-          confirm: args.confirm,
-          allow_live: args.allow_live,
           refresh_cache: false,
+          gateLive: false,
         });
       }
 

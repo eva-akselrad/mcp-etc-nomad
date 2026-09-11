@@ -68,7 +68,8 @@ function formatRange(
   type: ProgrammingTarget,
   from: number | string,
   thru?: number | string,
-  cueList?: number
+  cueList?: number,
+  thruCueList?: number
 ): string {
   const start =
     type === "cue"
@@ -79,7 +80,9 @@ function formatRange(
   }
   const end =
     type === "cue"
-      ? formatCueRef({ cueList, cue: thru })
+      ? thruCueList !== undefined && thruCueList !== cueList
+        ? formatCueRef({ cueList: thruCueList, cue: thru })
+        : targetNumber(thru, "cue")
       : formatTarget(type, thru);
   return `${start} Thru ${end}`;
 }
@@ -333,9 +336,17 @@ export function buildDeleteCommand(options: {
   const parts = ["Delete"];
 
   if (options.target === "cue") {
-    parts.push(
-      formatRange("cue", options.from, options.thru, options.cueList)
-    );
+    if (options.thru === undefined && options.part !== undefined) {
+      parts.push(
+        formatCueRef({
+          cueList: options.cueList,
+          cue: options.from,
+          part: options.part,
+        })
+      );
+    } else {
+      parts.push(formatRange("cue", options.from, options.thru, options.cueList));
+    }
   } else {
     parts.push(formatRange(options.target, options.from, options.thru));
   }
