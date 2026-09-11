@@ -47,9 +47,14 @@ describe("show-admin workflow builders (Eos OSC domain)", () => {
     assert.deepEqual(merge.steps, ["Merge"]);
   });
 
+  it("load/merge support confirm_path second Enter", () => {
+    assert.deepEqual(buildLoadShowWorkflow({ confirmPath: true }).steps, [""]);
+    assert.deepEqual(buildMergeShowWorkflow({ confirmPath: true }).steps, ["Merge", ""]);
+  });
+
   it("export returns manual browser instructions, not CLI paths", () => {
     const manual = exportManualInstructions("patch");
-    assert.equal(manual.manualStepRequired, true);
+    assert.equal(manual.needsManual, true);
     assert.match(manual.browserPath, /Browser/);
     assert.deepEqual(manual.keys, ["open_browser", "export_folder"]);
     assert.ok(manual.notes.some((n) => n.includes("no /eos/export")));
@@ -102,6 +107,17 @@ describe("show_admin tools (TX via recording client)", () => {
     assert.equal(client.sent.length, 0);
   });
 
+  it("show_load requires confirm_path when gating is on", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+    const blocked = await invokeTool(server, "show_load", {
+      confirm: true,
+      user_intent: "load archived show",
+    });
+    assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /confirm_path/);
+    assert.equal(client.sent.length, 0);
+  });
+
   it("show_load opens Browser keys when allowed", async () => {
     const { server, client } = createHarness({
       consoleMode: "blind",
@@ -111,22 +127,22 @@ describe("show_admin tools (TX via recording client)", () => {
       user_intent: "open archived show",
     });
     assert.equal(isToolError(result), false);
-    const body = parseToolJson<{ manualStepRequired: boolean; sent: string[] }>(result);
-    assert.equal(body.manualStepRequired, true);
+    const body = parseToolJson<{ needsManual: boolean; sent: string[] }>(result);
+    assert.equal(body.needsManual, true);
     const keys = client.sent.filter((m) => m.address.startsWith("/eos/key/"));
     assert.ok(keys.some((m) => m.address.includes("open_browser")));
     assert.ok(keys.some((m) => m.address.includes("open_file")));
   });
 
-  it("show_export returns manualStepRequired without invented paths", async () => {
+  it("show_export returns needsManual without invented paths", async () => {
     const { server, client } = createHarness({
       consoleMode: "blind",
       config: { requireConfirm: false },
     });
     const result = await invokeTool(server, "show_export", { target: "patch" });
     assert.equal(isToolError(result), false);
-    const body = parseToolJson<{ manualStepRequired: boolean; browserPath: string }>(result);
-    assert.equal(body.manualStepRequired, true);
+    const body = parseToolJson<{ needsManual: boolean; browserPath: string }>(result);
+    assert.equal(body.needsManual, true);
     assert.match(body.browserPath, /Browser/);
     assert.equal(client.sent.length, 0);
   });
@@ -154,8 +170,20 @@ describe("network session tools", () => {
     assert.ok(addresses.includes("/eos/get/show/path"));
     assert.ok(addresses.includes("/eos/get/version"));
     assert.ok(addresses.includes("/eos/get/session"));
-    const body = parseToolJson<{ warnings: string[] }>(result);
+    const body = parseToolJson<{ warnings: string[]; tcpOscVersion?: string }>(result);
     assert.ok(body.warnings.some((w) => /Host/.test(w)));
+  });
+
+  it("osc_set_user updates routing and sends /eos/user for positive ids", async () => {
+    const { server, client, ctx } = createHarness({
+      consoleMode: "blind",
+      config: { requireConfirm: false, userId: -1 },
+    });
+    const result = await invokeTool(server, "osc_set_user", { user_id: 5 });
+    assert.equal(isToolError(result), false);
+    assert.equal(ctx.config.userId, 5);
+    assert.equal(client.sent.at(-1)?.address, "/eos/user");
+    assert.equal(client.sent.at(-1)?.args[0], 5);
   });
 
   it("network_session_join requires user_intent", async () => {
@@ -175,22 +203,24 @@ describe("network session tools", () => {
       user_intent: "join tech desk mirror",
     });
     assert.equal(isToolError(result), false);
-    const body = parseToolJson<{ manualStepRequired: boolean }>(result);
-    assert.equal(body.manualStepRequired, true);
+    const body = parseToolJson<{ needsManual: boolean }>(result);
+    assert.equal(body.needsManual, true);
     assert.equal(client.sent.at(-1)?.address, "/eos/key/open_mirror_dialog");
   });
 });
 
 describe("EosTcpLink packet framing", () => {
-  it("uses slip mode by default for port 3037", () => {
+  it("uses slip / OSC 1.1 for port 3037", () => {
     const config = makeTestConfig({ protocol: "tcp", tcpPort: 3037 });
     const link = new EosTcpLink(config);
     assert.equal(config.tcpMode, "slip");
+    assert.equal(config.tcpOscVersion, "1.1");
     assert.ok(link);
   });
 
-  it("defaults to length mode for port 3032", () => {
+  it("uses length / OSC 1.0 for port 3032", () => {
     const config = makeTestConfig({ protocol: "tcp", tcpPort: 3032 });
     assert.equal(config.tcpMode, "length");
+    assert.equal(config.tcpOscVersion, "1.0");
   });
 });

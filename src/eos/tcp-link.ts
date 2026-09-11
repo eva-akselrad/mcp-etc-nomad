@@ -12,8 +12,11 @@ export interface OscInboundMessage {
 type MessageHandler = (message: OscInboundMessage) => void;
 
 /**
- * Shared bidirectional TCP OSC link for Eos Third Party (3037 SLIP) or native TCP (3032 length-prefixed).
- * node-eos-console pattern: one outbound connection carries TX and RX.
+ * Real TCP OSC to Eos (not UDP port retargeting).
+ * Eos listens on TCP; one outbound connection is bidirectional — /eos/out/* RX on the same socket.
+ * OSC TCP 1.0 = 32-bit packet-length headers (port 3032 default).
+ * OSC TCP 1.1 = SLIP framing (port 3037 Third Party OSC, v3.1+; faster /eos/out refresh).
+ * Enable OSC RX+TX in Setup regardless of transport. Framing must match Eos TCP mode setting.
  */
 export class EosTcpLink extends EventEmitter {
   private socket: Socket | null = null;

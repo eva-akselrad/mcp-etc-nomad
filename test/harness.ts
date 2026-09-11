@@ -39,8 +39,10 @@ export function makeTestConfig(overrides: Partial<ServerConfig> = {}): ServerCon
   const tcpPort = base.tcpPort;
   const tcpMode =
     overrides.tcpMode ??
-    (tcpPort === 3032 ? "length" : "slip");
-  return { ...base, tcpMode };
+    (tcpPort === 3032 ? "length" : tcpPort === 3037 ? "slip" : "length");
+  const tcpOscVersion =
+    overrides.tcpOscVersion ?? (tcpMode === "slip" ? "1.1" : "1.0");
+  return { ...base, tcpMode, tcpOscVersion };
 }
 
 class StubListener {

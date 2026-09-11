@@ -49,7 +49,19 @@ export type ShowSaveOptions = SystemWriteOptions & {
   confirm_save?: boolean;
 };
 
-export type LoadMergeOptions = SystemWriteOptions;
+export type LoadMergeOptions = SystemWriteOptions & {
+  /** Confirms echoed load/merge path with second Enter (Eos OSC domain). */
+  confirm_path?: boolean;
+};
+
+const loadMergeFields = {
+  confirm_path: z
+    .boolean()
+    .optional()
+    .describe(
+      "Required when EOS_REQUIRE_CONFIRM=true. Sends second Enter after Browser path echo / confirm dialog."
+    ),
+};
 
 const systemWriteFields = {
   user_intent: z
@@ -70,7 +82,7 @@ const showSaveFields = {
     ),
 };
 
-export { showSaveFields, systemWriteFields };
+export { loadMergeFields, showSaveFields, systemWriteFields };
 
 /** System/show-file writes require confirm and user_intent when EOS_REQUIRE_CONFIRM=true. */
 export function gateSystemWrite(ctx: EosContext, options: SystemWriteOptions) {
@@ -136,7 +148,21 @@ export function gateLoadMerge(ctx: EosContext, options: LoadMergeOptions) {
     );
   }
 
-  return gateSystemWrite(ctx, options);
+  const system = gateSystemWrite(ctx, options);
+  if (system) return system;
+
+  if (ctx.config.requireConfirm && !options.confirm_path) {
+    return jsonResult(
+      {
+        ok: false,
+        error:
+          "Pass confirm_path=true for load/merge — desk confirms echoed path with second Enter (EOS_REQUIRE_CONFIRM=true).",
+      },
+      true
+    );
+  }
+
+  return null;
 }
 
 export function gateDestructiveWrite(ctx: EosContext, options: DestructiveWriteOptions) {

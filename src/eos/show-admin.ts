@@ -77,11 +77,12 @@ export function buildSaveShowWorkflow(options: {
 }
 
 /** Open Browser load wizard — user selects show file manually. */
-export function buildLoadShowWorkflow(): ShowWorkflowSteps {
+export function buildLoadShowWorkflow(options?: { confirmPath?: boolean }): ShowWorkflowSteps {
+  const steps = options?.confirmPath ? [""] : [];
   return {
     style: "two_step",
     keys: ["open_browser", "open_file"],
-    steps: [],
+    steps,
     notes: [
       ...DOMAIN_NOTES,
       "Load is Browser File > Open — no CLI path argument.",
@@ -93,11 +94,15 @@ export function buildLoadShowWorkflow(): ShowWorkflowSteps {
 }
 
 /** Open Browser merge wizard — partial merge needs {Advanced} in CIA. */
-export function buildMergeShowWorkflow(): ShowWorkflowSteps {
+export function buildMergeShowWorkflow(options?: { confirmPath?: boolean }): ShowWorkflowSteps {
+  const steps = ["Merge"];
+  if (options?.confirmPath) {
+    steps.push("");
+  }
   return {
     style: "two_step",
     keys: ["open_browser"],
-    steps: ["Merge"],
+    steps,
     notes: [
       ...DOMAIN_NOTES,
       "Merge is Browser File > Merge — user selects source show in CIA.",
@@ -109,7 +114,7 @@ export function buildMergeShowWorkflow(): ShowWorkflowSteps {
 
 /** Export targets that require Browser wizard (no pure CLI / no /eos/export). */
 export function exportManualInstructions(target: ShowExportTarget): {
-  manualStepRequired: true;
+  needsManual: true;
   target: ShowExportTarget;
   browserPath: string;
   keys: string[];
@@ -125,7 +130,7 @@ export function exportManualInstructions(target: ShowExportTarget): {
   };
 
   return {
-    manualStepRequired: true,
+    needsManual: true,
     target,
     browserPath: browserPaths[target],
     keys: ["open_browser", "export_folder"],

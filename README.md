@@ -65,16 +65,18 @@ Eos OSC domain rules: **no OSC Save/Load verbs** — Browser + `key_press` + CLI
 
 | Group | Tools |
 |-------|--------|
-| Show files | `show_save` (keys/CLI), `show_load`, `show_merge` (Browser wizards), `show_export` (manual step), `get_show_path` |
+| Show files | `show_save`, `show_load`, `show_merge`, `show_export` (`/eos/newcmd` + keys); `get_show_path` |
 | Patch extras | `attach_patch_device`, `detach_patch_device` |
 | Troubleshoot | `identify_fixture`, `channel_check`, `highlight_channels` |
-| Network | `get_session_info` (processors/userlist), `network_session_join`, `network_session_leave` |
+| Network | `get_session_info`, `osc_set_user`, `network_session_join`, `network_session_leave` |
 
-**Gates:** `user_intent` required for load/merge/join; `confirm_save` for save when `EOS_REQUIRE_CONFIRM=true`. Prefer Blind for load/merge. After load/merge, run `sync_show_targets` and reconfigure banks.
+**Gates:** `user_intent` for load/merge/join; `confirm_save` / `confirm_path` when `EOS_REQUIRE_CONFIRM=true`. Prefer Blind for load/merge. After load/merge, `sync_show_targets` + reconfigure banks.
 
-**TCP transport:** set `EOS_PROTOCOL=tcp`. Port `3037` = SLIP (Third Party OSC); `3032` = length-prefixed OSC 1.0 — not 1:1 with UDP `8000`/`9001`. `/eos/out/*` RX is bidirectional on the same TCP socket. Firewall both directions.
+**TCP transport (real TCP OSC, not UDP retarget):** `EOS_PROTOCOL=tcp`. `3032` = OSC TCP 1.0 length headers (bidirectional); `3037` = Third Party OSC 1.1 SLIP (~realtime `/eos/out`). Custom ports OK (4703–4727+). Enable OSC RX+TX in Setup. UDP remains default; ETC prefers TCP.
 
-**Prompts:** `nomad-setup`
+**Resources:** `eos://console/info`, `eos://console/session`, `eos://console/version`, `eos://show/path`
+
+**Prompts:** `nomad-setup`, `eos-showfile`
 
 ## Quick start
 

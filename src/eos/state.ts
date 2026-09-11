@@ -42,6 +42,13 @@ export interface SessionInfo {
   lastEvent?: string;
 }
 
+export interface ConsoleGetCache {
+  processors?: unknown[];
+  userlist?: unknown[];
+  version?: unknown[];
+  session?: unknown[];
+}
+
 export interface ShowFileInfo {
   path?: string;
   lastEvent?: "saved" | "loaded" | "cleared" | string;
@@ -58,6 +65,7 @@ export interface EosState {
   showPath?: string;
   session?: SessionInfo;
   showFile?: ShowFileInfo;
+  consoleGet?: ConsoleGetCache;
   activeCue: ActiveCueState;
   activeChannels?: string;
   pendingCue: PendingCueState;
@@ -82,6 +90,7 @@ export function createInitialState(): EosState {
     consoleMode: "unknown",
     showFile: {},
     session: {},
+    consoleGet: {},
     activeCue: {},
     pendingCue: { raw: {} },
     pendingCues: {},

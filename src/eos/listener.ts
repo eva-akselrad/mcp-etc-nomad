@@ -142,11 +142,24 @@ export class EosListener extends EventEmitter {
       };
     }
 
+    if (address === "/eos/out/get/processors") {
+      this.state.consoleGet = { ...this.state.consoleGet, processors: args };
+    }
+
+    if (address === "/eos/out/get/userlist") {
+      this.state.consoleGet = { ...this.state.consoleGet, userlist: args };
+    }
+
+    if (address === "/eos/out/get/version") {
+      this.state.consoleGet = { ...this.state.consoleGet, version: args };
+    }
+
     if (address === "/eos/out/get/session") {
       this.state.session = {
         ...this.state.session,
         raw: args,
       };
+      this.state.consoleGet = { ...this.state.consoleGet, session: args };
     }
 
     const showEventMatch = address.match(/^\/eos\/out\/event\/show\/(\w+)$/);

@@ -29,6 +29,7 @@ import {
   gateSystemWrite,
   jsonResult,
   liveWriteFields,
+  loadMergeFields,
   sendButton,
   showSaveFields,
   systemWriteFields,
@@ -64,7 +65,7 @@ async function runShowWorkflow(
   options: {
     waitForShowEventMs?: number;
     refreshAfterShowEvent?: boolean;
-    manualStepRequired?: boolean;
+    needsManual?: boolean;
   } = {}
 ): Promise<ReturnType<typeof jsonResult>> {
   const { steps, notes, keys } = workflow;
@@ -126,7 +127,7 @@ async function runShowWorkflow(
   return jsonResult({
     ok: true,
     action: "show_admin",
-    manualStepRequired: options.manualStepRequired ?? false,
+    needsManual: options.needsManual ?? false,
     sent,
     echoedPath,
     notes: [
@@ -134,7 +135,7 @@ async function runShowWorkflow(
       "No OSC Save/Load verbs — Browser/key_press/CLI only. Never invent file paths.",
       refresh
         ? "Ran sync_show_targets after show event — reconfigure fader/cue-list banks before trusting labels."
-        : options.manualStepRequired
+        : options.needsManual
           ? "Complete file selection in Browser CIA, then sync_show_targets."
           : undefined,
     ].filter(Boolean),
@@ -146,8 +147,8 @@ async function runShowWorkflow(
     protocol: ctx.config.protocol,
     transportNote:
       ctx.config.protocol === "tcp"
-        ? `TCP ${ctx.config.tcpPort} (${ctx.config.tcpMode}) — bidirectional; /eos/out/* on same socket. Not UDP ${ctx.config.portTx}/${ctx.config.portRx}.`
-        : `UDP TX→${ctx.config.portTx} RX←${ctx.config.portRx}`,
+        ? `TCP ${ctx.config.tcpPort} OSC ${ctx.config.tcpOscVersion} (${ctx.config.tcpMode}) — bidirectional; /eos/out/* on same socket. Enable OSC RX+TX in Setup. Not UDP ${ctx.config.portTx}/${ctx.config.portRx}.`
+        : `UDP TX→${ctx.config.portTx} RX←${ctx.config.portRx} (MCP default; ETC prefers TCP for reliability)`,
   });
 }
 
@@ -190,6 +191,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
         refresh_after_event: z.boolean().optional(),
         ...liveWriteFields,
         ...systemWriteFields,
+        ...loadMergeFields,
       }),
       annotations: { destructiveHint: true },
     },
@@ -197,8 +199,8 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
       const blocked = gateLoadMerge(ctx, args);
       if (blocked) return blocked;
 
-      return runShowWorkflow(ctx, buildLoadShowWorkflow(), {
-        manualStepRequired: true,
+      return runShowWorkflow(ctx, buildLoadShowWorkflow({ confirmPath: args.confirm_path }), {
+        needsManual: true,
         waitForShowEventMs: args.wait_for_event_ms,
         refreshAfterShowEvent: args.refresh_after_event ?? true,
       });
@@ -215,6 +217,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
         refresh_after_event: z.boolean().optional(),
         ...liveWriteFields,
         ...systemWriteFields,
+        ...loadMergeFields,
       }),
       annotations: { destructiveHint: true },
     },
@@ -222,8 +225,8 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
       const blocked = gateLoadMerge(ctx, args);
       if (blocked) return blocked;
 
-      return runShowWorkflow(ctx, buildMergeShowWorkflow(), {
-        manualStepRequired: true,
+      return runShowWorkflow(ctx, buildMergeShowWorkflow({ confirmPath: args.confirm_path }), {
+        needsManual: true,
         waitForShowEventMs: args.wait_for_event_ms,
         refreshAfterShowEvent: args.refresh_after_event ?? true,
       });
@@ -234,7 +237,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
     "show_export",
     {
       description:
-        "Export via Browser wizard only — returns manualStepRequired. No /eos/export OSC or invented paths.",
+        "Export via Browser wizard only — returns needsManual. No /eos/export OSC or invented paths.",
       inputSchema: z.object({
         target: exportTargetSchema,
         open_browser: z
@@ -260,7 +263,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
       return jsonResult({
         ok: true,
         action: "show_export",
-        manualStepRequired: true,
+        needsManual: true,
         target: manual.target,
         browserPath: manual.browserPath,
         sent,

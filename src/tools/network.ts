@@ -64,11 +64,11 @@ export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
 
       if (ctx.config.protocol === "tcp") {
         warnings.push(
-          `TCP port ${ctx.config.tcpPort} (${ctx.config.tcpMode}) is bidirectional — /eos/out/* arrives on the same socket, not UDP ${ctx.config.portRx}. Firewall both directions.`
+          `TCP ${ctx.config.tcpPort} OSC ${ctx.config.tcpOscVersion} (${ctx.config.tcpMode}) — bidirectional on one socket; /eos/out/* not UDP ${ctx.config.portRx}. Enable OSC RX+TX in Setup. 3037 Third Party ≈ realtime /eos/out; 3032 ≈ 1Hz. Firewall both directions.`
         );
       } else {
         warnings.push(
-          `UDP: TX→console:${ctx.config.portTx}, MCP listens ${ctx.config.portRx}. Firewall both directions or state stays empty.`
+          `UDP (MCP default): TX→console:${ctx.config.portTx}, MCP listens ${ctx.config.portRx}. ETC prefers TCP for reliability. Firewall both directions or state stays empty.`
         );
       }
 
@@ -79,6 +79,7 @@ export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
         protocol: ctx.config.protocol,
         tcpPort: ctx.config.protocol === "tcp" ? ctx.config.tcpPort : undefined,
         tcpMode: ctx.config.protocol === "tcp" ? ctx.config.tcpMode : undefined,
+        tcpOscVersion: ctx.config.protocol === "tcp" ? ctx.config.tcpOscVersion : undefined,
         eosVersion: ctx.config.eosVersion,
         cached: {
           showPath: state.showPath,
@@ -91,6 +92,42 @@ export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
           "Join/leave session roles are ECU Shell UI at boot — no session join OSC verb.",
           "Use identify_fixture for lamp flash; processors/userlist for console identity.",
         ],
+      });
+    }
+  );
+
+  server.registerTool(
+    "osc_set_user",
+    {
+      description:
+        "Set OSC virtual user routing for subsequent commands (/eos/user/{id} prefix). -1 = match console.",
+      inputSchema: z.object({
+        user_id: z
+          .number()
+          .int()
+          .min(-1)
+          .max(99)
+          .describe("OSC user 0–99; 0 = background (avoid for Browser dialogs); -1 = match console."),
+      }),
+      annotations: { destructiveHint: true },
+    },
+    async ({ user_id }) => {
+      ctx.config.userId = user_id;
+      const warnings: string[] = [];
+      if (user_id === 0) {
+        warnings.push("OSC user 0 is background — avoid for interactive save/load Browser workflows.");
+      }
+      if (user_id >= 0) {
+        await ctx.client.send("/eos/user", user_id);
+      }
+      return jsonResult({
+        ok: true,
+        oscUserId: user_id,
+        note:
+          user_id < 0
+            ? "Subsequent commands use console-matched user (no /eos/user prefix)."
+            : `Subsequent commands prefixed /eos/user/${user_id}/…`,
+        warnings,
       });
     }
   );
@@ -124,7 +161,7 @@ export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
       return jsonResult({
         ok: true,
         action: "network_session_join",
-        manualStepRequired: true,
+        needsManual: true,
         sent,
         notes: [
           "No session-join OSC verb — role is ECU Welcome Screen (Browser > File > Exit Eos).",
@@ -158,7 +195,7 @@ export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
       return jsonResult({
         ok: true,
         action: "network_session_leave",
-        manualStepRequired: true,
+        needsManual: true,
         sent: [address],
         notes: [
           "Stop Mirroring softkey / ALT+F2 exits mirror (no documented OSC name).",

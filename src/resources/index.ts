@@ -1,10 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import type { EosContext } from "../eos/context.js";
 import { oscKeyCatalog } from "../eos/keys.js";
+import { registerConsoleResources } from "./console.js";
 import { registerPlaybackResources } from "./playback.js";
 import { registerShowResources } from "./show.js";
 
 export function registerResources(server: McpServer, ctx: EosContext): void {
+  registerConsoleResources(server, ctx);
   registerPlaybackResources(server, ctx);
   registerShowResources(server, ctx);
   registerKeyResources(server);

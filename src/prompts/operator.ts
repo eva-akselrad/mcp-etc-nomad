@@ -121,22 +121,46 @@ const NOMAD_SETUP_INSTRUCTIONS = `You are configuring ETCnomad / Eos network and
 9. OSC user (EOS_USER_ID) ≠ console login; avoid user 0 for interactive Browser save/load dialogs.
 10. Offline Nomad ≠ Client of a live session.
 
-## TCP vs UDP
-11. TCP ports 3032 (length-prefixed OSC 1.0) and 3037 (Third Party SLIP) — not 1:1 with UDP 8000/9001.
-12. TCP is stream-framed OSC (length-prefix or SLIP) — do not use naive UDP datagram code.
-13. UDP is default; TCP for firewalls; one transport per connection.
-14. On TCP, /eos/out/* RX is bidirectional on the same socket (not a separate UDP listener).
-15. Firewall both directions or listener state stays empty.
+## TCP vs UDP (real TCP OSC — not UDP port retargeting)
+11. Port 3032: Eos listens for native OSC TCP 1.0 (packet-length headers); bidirectional on one socket. Still enable OSC RX+TX in Setup.
+12. Port 3037: optional Third Party OSC 1.1 (SLIP, v3.1+); faster /eos/out refresh (~realtime vs ~1Hz on 3032). Enable in Device/Network settings.
+13. OSC TCP mode must match client: 1.0 = length headers, 1.1 = SLIP (EOS_TCP_OSC_VERSION or EOS_TCP_MODE).
+14. Custom TCP ports allowed (prefer 4703–4727+). UDP remains MCP default; ETC prefers TCP for reliability.
+15. On TCP, /eos/out/* RX is on the same socket — not UDP 8000/9001. Firewall both directions or state stays empty.
 
 ## Safety
 16. System class (save/load/merge/join): explicit user_intent + audit gates; never auto-load.
 17. Do not send /eos/reset as part of load.
 
 ## Tools
-- show_save (quick/save/save_as), show_load, show_merge, show_export, get_show_path
-- get_session_info, network_session_join (mirror dialog), network_session_leave (exit key)
+- show_save / show_load / show_merge / show_export via /eos/newcmd + keys; confirm_save / confirm_path gates
+- get_show_path, get_session_info (/eos/get/processors, userlist, version, session)
+- osc_set_user, network_session_join / leave (needsManual — no fake session OSC)
+- Resources: eos://console/info|session|version, eos://show/path
 - identify_fixture, channel_check, highlight_channels
 - attach_patch_device / detach_patch_device (Patch dimmer/RDM — not network join)
+`;
+
+const SHOWFILE_INSTRUCTIONS = `You are managing ETC Eos show files via MCP (Eos OSC Domain + Phase 3 spec).
+
+## Hard rules
+1. No OSC Save/Load verbs — Browser + key_press + /eos/newcmd CLI only. Never invent usb1:/ or .esf paths.
+2. show_save: quick=Shift+Update keys; save=Save CLI; save_as=Browser. Use confirm_save for second Enter.
+3. show_load / show_merge: Browser wizards only; always pass user_intent; use confirm_path for echoed-path confirm Enter.
+4. show_export: returns needsManual + Browser wizard steps — no /eos/export OSC.
+5. After load/merge: sync_show_targets + reconfigure banks. Never /eos/reset on load.
+6. Pin EOS_VERSION (.esf vs .esf3d).
+
+## Workflow
+- Read eos://show/path or get_show_path before/after operations.
+- Prefer Blind/offline for destructive show work.
+- Echo path from /eos/out/event/show/* — do not guess filenames.
+- Export: call show_export, complete CIA wizard manually, then verify path if needed.
+
+## Gates (EOS_REQUIRE_CONFIRM=true)
+- user_intent on all system/show ops
+- confirm_save on save
+- confirm_path on load/merge after Browser selection
 `;
 
 export function registerPrompts(server: McpServer, _ctx: EosContext): void {
@@ -199,6 +223,22 @@ export function registerPrompts(server: McpServer, _ctx: EosContext): void {
         {
           role: "user" as const,
           content: { type: "text" as const, text: NOMAD_SETUP_INSTRUCTIONS },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
+    "eos-showfile",
+    {
+      title: "Eos show file operations",
+      description: "Save/load/merge/export domain rules, confirm_path, sync, Browser workflows",
+    },
+    () => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: { type: "text" as const, text: SHOWFILE_INSTRUCTIONS },
         },
       ],
     })
