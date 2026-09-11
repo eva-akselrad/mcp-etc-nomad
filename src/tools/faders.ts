@@ -236,7 +236,7 @@ export function registerFaderTools(server: McpServer, ctx: EosContext): void {
     "submaster_bump",
     {
       description:
-        "Bump a submaster via /eos/sub/{n}/fire (button edge 1.0/0.0). edge=down holds; edge=up releases; tap (default) press+release. Set level with submaster_set_level first if needed.",
+        "Bump a submaster (OSC button edge on /eos/sub/{n}). edge=down holds bump; edge=up releases; tap (default) press+release. Set level with submaster_set_level first if needed.",
       inputSchema: z.object(subBumpFields),
       annotations: { destructiveHint: true },
     },
@@ -246,8 +246,7 @@ export function registerFaderTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
     "submaster_fire",
     {
-      description:
-        "Bump a submaster via /eos/sub/{n}/fire (alias of submaster_bump).",
+      description: "Bump a submaster (legacy alias name submaster_bump).",
       inputSchema: z.object(subBumpFields),
       annotations: { destructiveHint: true },
     },

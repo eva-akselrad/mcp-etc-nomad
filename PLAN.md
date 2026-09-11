@@ -104,7 +104,7 @@ Channel 1 Thru 10 At Full Record Preset 1 Enter
 | Blackout | `blackout` | OSC `/eos/key/blackout` (never Chan Thru Out) |
 | Grand master | `grandmaster_set_level` | OSC `/eos/fader/0/1` |
 | Set sub 3 to 50% | `submaster_set_level` | OSC `/eos/sub/3=0.5` |
-| Recall color palette 2 | `palette_fire` | OSC `/eos/cp/fire=2` |
+| Recall color palette 2 | `palette_recall` | OSC `/eos/cp` recall |
 | Run macro 5 | `macro_fire` | OSC `/eos/macro/fire=5` |
 | Record cue 1.5 | `eos_command` | `Cue 1.5 Enter Record Enter` |
 | Patch channel 101 | `eos_command` | `Patch 101 Enter` |
@@ -251,8 +251,8 @@ All OSC to/from a session must go through the **session Host**. MCP config needs
 | `pixelmap_select` | `/eos/pixmap` |
 | `magic_sheet_open` | `/eos/ms` |
 | `snapshot_select` | Snapshot targets |
-| `preset_select` / `preset_fire` | Presets |
-| `palette_select` / `palette_fire` | IP, FP, CP, BP |
+| `preset_select` / `preset_recall` (`preset_fire` alias) | Presets |
+| `palette_select` / `palette_recall` (`palette_fire` alias) | IP, FP, CP, BP |
 
 #### C. Playback
 
@@ -276,7 +276,7 @@ All OSC to/from a session must go through the **session Host**. MCP config needs
 | `fader_load` / `fader_unload` / `fader_stop` / `fader_fire` | Fader actions |
 | `fader_bank_page` | Page faders |
 | `submaster_set_level` | Sub intensity |
-| `submaster_fire` | Bump sub |
+| `submaster_bump` (`submaster_fire` alias) | Bump sub |
 
 #### E. Keys & macros
 

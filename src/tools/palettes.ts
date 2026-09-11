@@ -70,7 +70,8 @@ export function registerPaletteTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
     "palette_recall",
     {
-      description: "Recall a palette onto the current selection via /eos/{ip|fp|cp|bp}/fire.",
+      description:
+        "Recall a palette onto the current selection (OSC palette recall verb on /eos/{ip|fp|cp|bp}).",
       inputSchema: z.object(paletteRecallFields),
       annotations: { destructiveHint: true },
     },
@@ -133,7 +134,7 @@ export function registerPaletteTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
     "preset_recall",
     {
-      description: "Recall a preset onto the current selection via /eos/preset/fire.",
+      description: "Recall a preset onto the current selection (OSC preset recall on /eos/preset).",
       inputSchema: z.object(presetRecallFields),
       annotations: { destructiveHint: true },
     },

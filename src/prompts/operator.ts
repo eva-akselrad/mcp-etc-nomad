@@ -43,7 +43,7 @@ Playback checklist:
 - Stop fade: cue_hold. Go back: cue_back
 - Subs: submaster_set_level (0–1); submaster_bump for bump (submaster_fire alias)
 - GM: grandmaster_set_level 0–100 (maps to /eos/fader/0/1). Blackout is separate — never GM=0
-- Palettes: palette_fire (recall) type=cp|ip|fp|bp
+- Palettes: palette_recall (palette_fire alias) type=cp|ip|fp|bp
 `;
 
 const PROGRAMMER_INSTRUCTIONS = `You are programming an ETC Eos Family console via MCP (Eos OSC domain rules).
