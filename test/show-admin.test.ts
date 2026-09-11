@@ -140,6 +140,14 @@ describe("show_admin tools (TX via recording client)", () => {
     assert.equal(body.pathEchoed, true);
   });
 
+  it("show_load requires user_intent", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+    const blocked = await invokeTool(server, "show_load", { confirm: true });
+    assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /user_intent/);
+    assert.equal(client.sent.length, 0);
+  });
+
   it("show_load requires user_intent and refuses LIVE without allow_live", async () => {
     const { server, client } = createHarness({ consoleMode: "live" });
     const blocked = await invokeTool(server, "show_load", {
@@ -202,8 +210,30 @@ describe("show_admin tools (TX via recording client)", () => {
     assert.equal(client.sent.length, 0);
   });
 
+  it("show_merge rejects user_intent shorter than 8 characters", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+    const blocked = await invokeTool(server, "show_merge", {
+      confirm: true,
+      user_intent: "merge",
+    });
+    assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /min 8 characters/);
+    assert.equal(client.sent.length, 0);
+  });
+
   it("show_merge refuses LIVE without allow_live", async () => {
     const { server, client } = createHarness({ consoleMode: "live" });
+    const blocked = await invokeTool(server, "show_merge", {
+      confirm: true,
+      user_intent: "merge archived show into current",
+    });
+    assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /Blind|allow_live/);
+    assert.equal(client.sent.length, 0);
+  });
+
+  it("show_merge refuses unknown without allow_live", async () => {
+    const { server, client } = createHarness({ consoleMode: "unknown" });
     const blocked = await invokeTool(server, "show_merge", {
       confirm: true,
       user_intent: "merge archived show into current",
@@ -242,6 +272,33 @@ describe("show_admin tools (TX via recording client)", () => {
     assert.ok(cmds.some((c) => /Merge Enter/.test(c)));
     const keys = client.sent.filter((m) => m.address.startsWith("/eos/key/"));
     assert.equal(keys.length, 0);
+  });
+
+  it("show_merge sends confirm Enter when confirm_path is set", async () => {
+    const { server, client } = createHarness({
+      consoleMode: "blind",
+      config: { requireConfirm: false },
+    });
+    await invokeTool(server, "show_merge", {
+      user_intent: "merge archived show into current",
+      confirm_path: true,
+    });
+    const cmds = client.sent.filter((m) => m.address === "/eos/newcmd").map((m) => String(m.args[0]));
+    assert.ok(cmds.some((c) => /Merge Enter/.test(c)));
+    assert.ok(cmds.some((c) => /Enter$/.test(c) && !/Merge/.test(c)));
+  });
+
+  it("show_merge sends unverified keys only when press_unverified_browser_keys=true", async () => {
+    const { server, client } = createHarness({
+      consoleMode: "blind",
+      config: { requireConfirm: false },
+    });
+    await invokeTool(server, "show_merge", {
+      user_intent: "merge archived show into current",
+      press_unverified_browser_keys: true,
+    });
+    const keys = client.sent.filter((m) => m.address.startsWith("/eos/key/"));
+    assert.ok(keys.some((m) => m.address.includes("open_browser")));
   });
 
   it("show_export returns needsManual without invented paths", async () => {
@@ -336,6 +393,17 @@ describe("network session tools", () => {
     const blocked = await invokeTool(server, "network_session_leave", { confirm: true });
     assert.equal(isToolError(blocked), true);
     assert.match(parseToolJson<{ error: string }>(blocked).error, /user_intent/);
+    assert.equal(client.sent.length, 0);
+  });
+
+  it("network_session_leave rejects short user_intent when gating is on", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+    const blocked = await invokeTool(server, "network_session_leave", {
+      confirm: true,
+      user_intent: "leave",
+    });
+    assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /min 8 characters/);
     assert.equal(client.sent.length, 0);
   });
 
