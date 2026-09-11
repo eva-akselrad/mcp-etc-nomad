@@ -25,6 +25,9 @@ type Waiter = {
   timer: NodeJS.Timeout;
 };
 
+/** Eos may append `/{argCount}` after `/list/0` on multipart /eos/out/get replies. */
+const LIST_0_SUFFIX = String.raw`(?:/\d+)?$`;
+
 export class EosListener extends EventEmitter {
   private server: Server | null = null;
   private readonly config: ServerConfig;
@@ -258,7 +261,9 @@ export class EosListener extends EventEmitter {
   }
 
   private updateShowDataFromGet(address: string, args: unknown[]): void {
-    const groupListMatch = address.match(/^\/eos\/out\/get\/group\/(\d+)\/list\/0$/);
+    const groupListMatch = address.match(
+      new RegExp(`^/eos/out/get/group/(\\d+)/list/0${LIST_0_SUFFIX}`)
+    );
     if (groupListMatch) {
       const number = Number(groupListMatch[1]);
       const base = parseBaseRecordTarget(args);
@@ -272,7 +277,7 @@ export class EosListener extends EventEmitter {
     }
 
     const groupChannelsMatch = address.match(
-      /^\/eos\/out\/get\/group\/(\d+)\/channels\/list\/0$/
+      new RegExp(`^/eos/out/get/group/(\\d+)/channels/list/0${LIST_0_SUFFIX}`)
     );
     if (groupChannelsMatch) {
       const number = Number(groupChannelsMatch[1]);
@@ -285,7 +290,9 @@ export class EosListener extends EventEmitter {
       return;
     }
 
-    const cueListMatch = address.match(/^\/eos\/out\/get\/cuelist\/(\d+)\/list\/0$/);
+    const cueListMatch = address.match(
+      new RegExp(`^/eos/out/get/cuelist/(\\d+)/list/0${LIST_0_SUFFIX}`)
+    );
     if (cueListMatch) {
       const number = Number(cueListMatch[1]);
       const base = parseBaseRecordTarget(args);
@@ -300,7 +307,9 @@ export class EosListener extends EventEmitter {
       return;
     }
 
-    const cueListLinkedMatch = address.match(/^\/eos\/out\/get\/cuelist\/(\d+)\/links\/list\/0/);
+    const cueListLinkedMatch = address.match(
+      new RegExp(`^/eos/out/get/cuelist/(\\d+)/links/list/0${LIST_0_SUFFIX}`)
+    );
     if (cueListLinkedMatch) {
       const number = Number(cueListLinkedMatch[1]);
       const existing = this.state.cueLists[cueListKey(number)] ?? { number };
@@ -311,7 +320,9 @@ export class EosListener extends EventEmitter {
       return;
     }
 
-    const cueMatch = address.match(/^\/eos\/out\/get\/cue\/(\d+)\/([^/]+)\/0\/list\/0$/);
+    const cueMatch = address.match(
+      new RegExp(`^/eos/out/get/cue/(\\d+)/([^/]+)/0/list/0${LIST_0_SUFFIX}`)
+    );
     if (cueMatch) {
       const cueList = Number(cueMatch[1]);
       const cueNumber = cueMatch[2];
@@ -330,7 +341,9 @@ export class EosListener extends EventEmitter {
       return;
     }
 
-    const presetMatch = address.match(/^\/eos\/out\/get\/preset\/(\d+)\/list\/0$/);
+    const presetMatch = address.match(
+      new RegExp(`^/eos/out/get/preset/(\\d+)/list/0${LIST_0_SUFFIX}`)
+    );
     if (presetMatch) {
       const number = Number(presetMatch[1]);
       const base = parseBaseRecordTarget(args);
@@ -343,7 +356,9 @@ export class EosListener extends EventEmitter {
       return;
     }
 
-    const paletteMatch = address.match(/^\/eos\/out\/get\/(ip|fp|cp|bp)\/(\d+)\/list\/0$/);
+    const paletteMatch = address.match(
+      new RegExp(`^/eos/out/get/(ip|fp|cp|bp)/(\\d+)/list/0${LIST_0_SUFFIX}`)
+    );
     if (paletteMatch) {
       const type = paletteMatch[1] as "ip" | "fp" | "cp" | "bp";
       const number = Number(paletteMatch[2]);

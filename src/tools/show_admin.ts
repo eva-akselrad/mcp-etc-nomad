@@ -3,7 +3,7 @@ import * as z from "zod/v4";
 import { keyPress } from "../eos/addresses.js";
 import { buildCommand } from "../eos/command.js";
 import type { EosContext } from "../eos/context.js";
-import { normalizeOscKey } from "../eos/keys.js";
+import { isUnverifiedBrowserOscKey, isVerifiedOscKey, normalizeOscKey } from "../eos/keys.js";
 import { asProgrammingSteps } from "../eos/programming.js";
 import {
   buildAttachDeviceCommand,
@@ -16,6 +16,7 @@ import {
   buildPatchDisplayStep,
   buildSaveShowWorkflow,
   exportManualInstructions,
+  UNVERIFIED_BROWSER_KEY_SEQUENCES,
   type ShowExportTarget,
   type ShowSaveMode,
   type ShowWorkflowSteps,
@@ -42,9 +43,19 @@ function parseShowWorkflowResult(result: ReturnType<typeof jsonResult>): Record<
   return JSON.parse(text) as Record<string, unknown>;
 }
 
-async function sendWorkflowKeys(ctx: EosContext, keys: string[]): Promise<string[]> {
+async function sendWorkflowKeys(
+  ctx: EosContext,
+  keys: string[],
+  options?: { allowUnverifiedBrowserKeys?: boolean }
+): Promise<string[]> {
   const sent: string[] = [];
   for (const raw of keys) {
+    if (!options?.allowUnverifiedBrowserKeys && isUnverifiedBrowserOscKey(raw)) {
+      continue;
+    }
+    if (!isVerifiedOscKey(raw) && !isUnverifiedBrowserOscKey(raw)) {
+      throw new Error(`Unrecognized workflow key token "${raw}"`);
+    }
     if (raw === "shift") {
       await sendButton(ctx, keyPress(normalizeOscKey("shift")), "down");
       sent.push("/eos/key/shift (down)");
@@ -64,6 +75,15 @@ async function sendWorkflowKeys(ctx: EosContext, keys: string[]): Promise<string
   return sent;
 }
 
+async function sendUnverifiedBrowserKeys(
+  ctx: EosContext,
+  sequence: keyof typeof UNVERIFIED_BROWSER_KEY_SEQUENCES
+): Promise<string[]> {
+  return sendWorkflowKeys(ctx, UNVERIFIED_BROWSER_KEY_SEQUENCES[sequence], {
+    allowUnverifiedBrowserKeys: true,
+  });
+}
+
 async function runShowWorkflow(
   ctx: EosContext,
   workflow: ShowWorkflowSteps,
@@ -72,13 +92,24 @@ async function runShowWorkflow(
     waitForShowEventMs?: number;
     refreshAfterShowEvent?: boolean;
     needsManual?: boolean;
+    pressUnverifiedBrowserKeys?: boolean;
+    unverifiedBrowserSequence?: keyof typeof UNVERIFIED_BROWSER_KEY_SEQUENCES;
   } = {}
 ): Promise<ReturnType<typeof jsonResult>> {
-  const { steps, notes, keys } = workflow;
+  const { steps, notes, keys, browserPath } = workflow;
   const sent: string[] = [];
+  const needsManual = options.needsManual ?? workflow.needsManual ?? false;
 
   if (keys?.length) {
-    sent.push(...(await sendWorkflowKeys(ctx, keys)));
+    sent.push(
+      ...(await sendWorkflowKeys(ctx, keys, {
+        allowUnverifiedBrowserKeys: options.pressUnverifiedBrowserKeys,
+      }))
+    );
+  }
+
+  if (options.pressUnverifiedBrowserKeys && options.unverifiedBrowserSequence) {
+    sent.push(...(await sendUnverifiedBrowserKeys(ctx, options.unverifiedBrowserSequence)));
   }
 
   for (const step of steps) {
@@ -133,7 +164,8 @@ async function runShowWorkflow(
   return jsonResult({
     ok: true,
     action: options.action ?? "show_admin",
-    needsManual: options.needsManual ?? false,
+    needsManual,
+    browserPath: needsManual ? browserPath : undefined,
     sent,
     echoedPath,
     savedPath: echoedPath,
@@ -143,7 +175,7 @@ async function runShowWorkflow(
       "No OSC Save/Load verbs — Browser/key_press/CLI only. Never invent file paths.",
       refresh
         ? "Ran sync_show_targets after show event — reconfigure fader/cue-list banks before trusting labels."
-        : options.needsManual
+        : needsManual
           ? "Complete file selection in Browser CIA, then sync_show_targets."
           : undefined,
     ].filter(Boolean),
@@ -183,9 +215,13 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
         mode: args.mode as ShowSaveMode | undefined,
         confirmSave: args.confirm_save,
       });
+      const mode = (args.mode as ShowSaveMode | undefined) ?? "quick";
       const result = await runShowWorkflow(ctx, workflow, {
         action: "show_save",
         waitForShowEventMs: args.wait_for_event_ms ?? 10000,
+        needsManual: mode === "save_as" ? true : undefined,
+        pressUnverifiedBrowserKeys: args.press_unverified_browser_keys,
+        unverifiedBrowserSequence: mode === "save_as" ? "save_as" : undefined,
       });
       const body = parseShowWorkflowResult(result);
       if (!body.pathEchoed) {
@@ -203,7 +239,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
     "show_load",
     {
       description:
-        "Open Browser load wizard (open_browser + open_file). User picks show — never auto-load. Prefer Blind.",
+        "Load show via Browser (needsManual + CIA path). User picks show — never auto-load. Prefer Blind.",
       inputSchema: z.object({
         wait_for_event_ms: z.number().int().positive().max(120000).optional(),
         refresh_after_event: z.boolean().optional(),
@@ -219,6 +255,8 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
 
       return runShowWorkflow(ctx, buildLoadShowWorkflow({ confirmPath: args.confirm_path }), {
         needsManual: true,
+        pressUnverifiedBrowserKeys: args.press_unverified_browser_keys,
+        unverifiedBrowserSequence: "load",
         waitForShowEventMs: args.wait_for_event_ms,
         refreshAfterShowEvent: args.refresh_after_event ?? true,
       });
@@ -229,7 +267,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
     "show_merge",
     {
       description:
-        "Open Browser merge flow. User selects source show; partial merge needs {Advanced}. Prefer Blind.",
+        "Merge show via Browser (needsManual + CIA path). User selects source; partial merge needs {Advanced}. Prefer Blind.",
       inputSchema: z.object({
         wait_for_event_ms: z.number().int().positive().max(120000).optional(),
         refresh_after_event: z.boolean().optional(),
@@ -245,6 +283,8 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
 
       return runShowWorkflow(ctx, buildMergeShowWorkflow({ confirmPath: args.confirm_path }), {
         needsManual: true,
+        pressUnverifiedBrowserKeys: args.press_unverified_browser_keys,
+        unverifiedBrowserSequence: "merge",
         waitForShowEventMs: args.wait_for_event_ms,
         refreshAfterShowEvent: args.refresh_after_event ?? true,
       });
@@ -261,7 +301,9 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
         open_browser: z
           .boolean()
           .optional()
-          .describe("When true, press open_browser + export_folder keys to start wizard."),
+          .describe(
+            "When true, press unverified open_browser + export_folder keys (Tab 7 verification). Default false — needsManual only."
+          ),
         ...liveWriteFields,
         ...systemWriteFields,
       }),
@@ -275,7 +317,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
       const sent: string[] = [];
 
       if (args.open_browser) {
-        sent.push(...(await sendWorkflowKeys(ctx, manual.keys)));
+        sent.push(...(await sendUnverifiedBrowserKeys(ctx, "export")));
       }
 
       return jsonResult({

@@ -63,14 +63,24 @@ const loadMergeFields = {
     ),
 };
 
+const unverifiedBrowserKeyFields = {
+  press_unverified_browser_keys: z
+    .boolean()
+    .optional()
+    .describe(
+      "When true, press unverified Virtual Keyboard OSC names (verify on console Tab 7 first). Default false — tools return needsManual + Browser/facepanel steps."
+    ),
+};
+
 const systemWriteFields = {
   user_intent: z
     .string()
-    .min(1)
+    .min(8)
     .optional()
     .describe(
-      "Required: short description of why this system/show operation is being performed."
+      "Required: short description (min 8 chars) of why this system/show operation is being performed."
     ),
+  ...unverifiedBrowserKeyFields,
 };
 
 const showSaveFields = {
@@ -82,19 +92,20 @@ const showSaveFields = {
     ),
 };
 
-export { loadMergeFields, showSaveFields, systemWriteFields };
+export { loadMergeFields, showSaveFields, systemWriteFields, unverifiedBrowserKeyFields };
 
 /** System/show-file writes require confirm and user_intent when EOS_REQUIRE_CONFIRM=true. */
 export function gateSystemWrite(ctx: EosContext, options: SystemWriteOptions) {
   const live = gateLiveWrite(ctx, options);
   if (live) return live;
 
-  if (ctx.config.requireConfirm && !options.user_intent?.trim()) {
+  const intent = options.user_intent?.trim() ?? "";
+  if (ctx.config.requireConfirm && intent.length < 8) {
     return jsonResult(
       {
         ok: false,
         error:
-          "Pass user_intent with a short description of this system operation (EOS_REQUIRE_CONFIRM=true).",
+          "Pass user_intent (min 8 characters) describing this system operation (EOS_REQUIRE_CONFIRM=true).",
       },
       true
     );
@@ -125,12 +136,13 @@ export function gateShowSave(ctx: EosContext, options: ShowSaveOptions) {
  * Never auto-load — opens Browser only.
  */
 export function gateLoadMerge(ctx: EosContext, options: LoadMergeOptions) {
-  if (!options.user_intent?.trim()) {
+  const intent = options.user_intent?.trim() ?? "";
+  if (intent.length < 8) {
     return jsonResult(
       {
         ok: false,
         error:
-          "Pass user_intent describing which show to load/merge. Load/merge is never automatic.",
+          "Pass user_intent (min 8 characters) describing which show to load/merge. Load/merge is never automatic.",
       },
       true
     );

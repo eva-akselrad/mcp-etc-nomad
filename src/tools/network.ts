@@ -3,12 +3,14 @@ import * as z from "zod/v4";
 import { keyPress } from "../eos/addresses.js";
 import type { EosContext } from "../eos/context.js";
 import { normalizeOscKey } from "../eos/keys.js";
+import { UNVERIFIED_BROWSER_KEY_SEQUENCES } from "../eos/show-admin.js";
 import {
   gateSystemWrite,
   jsonResult,
   liveWriteFields,
   sendButton,
   systemWriteFields,
+  unverifiedBrowserKeyFields,
 } from "./helpers.js";
 
 async function waitForGetReply(
@@ -141,9 +143,12 @@ export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
         open_mirror_dialog: z
           .boolean()
           .optional()
-          .describe("When true (default), press open_mirror_dialog key to list Hosts."),
+          .describe(
+            "When true, press unverified open_mirror_dialog key (Tab 7 verification). Default false — needsManual + facepanel steps."
+          ),
         ...liveWriteFields,
         ...systemWriteFields,
+        ...unverifiedBrowserKeyFields,
       }),
       annotations: { destructiveHint: true },
     },
@@ -152,22 +157,27 @@ export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
       if (blocked) return blocked;
 
       const sent: string[] = [];
-      if (args.open_mirror_dialog !== false) {
-        const address = keyPress(normalizeOscKey("open_mirror_dialog"));
-        await sendButton(ctx, address);
-        sent.push(address);
+      const pressKeys = args.open_mirror_dialog === true || args.press_unverified_browser_keys === true;
+      if (pressKeys) {
+        for (const raw of UNVERIFIED_BROWSER_KEY_SEQUENCES.join) {
+          const address = keyPress(normalizeOscKey(raw));
+          await sendButton(ctx, address);
+          sent.push(address);
+        }
       }
 
       return jsonResult({
         ok: true,
         action: "network_session_join",
         needsManual: true,
+        browserPath: "Facepanel / Shell: mirror dialog or ECU Welcome Screen at boot",
         sent,
         notes: [
           "No session-join OSC verb — role is ECU Welcome Screen (Browser > File > Exit Eos).",
           "Mirror dialog lists Hosts; user selects in CIA. Offline Nomad ≠ live Client.",
           "Verify Host with get_session_info (/eos/get/processors, userlist).",
           "EOS_HOST must be the session Host console IP.",
+          "Unverified open_mirror_dialog key is not sent unless open_mirror_dialog=true or press_unverified_browser_keys=true (Tab 7 verification).",
         ],
         eosVersion: ctx.config.eosVersion,
       });
