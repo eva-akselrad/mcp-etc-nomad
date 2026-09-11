@@ -2,35 +2,42 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { oscReset } from "../eos/addresses.js";
 import type { EosContext } from "../eos/context.js";
+import { jsonResult } from "./helpers.js";
 
 export function registerQueryTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
     "get_console_state",
     {
-      description: "Return cached console state (blind/live, user, connection)",
+      description: "Return cached console state (blind/live, user, connection, lastSyncedAt)",
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
     async () => {
       const state = ctx.listener.getState();
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(state, null, 2) }],
-      };
+      return jsonResult({
+        connected: state.connected,
+        consoleMode: state.consoleMode,
+        oscUserId: state.oscUserId,
+        commandLine: state.commandLine,
+        activeChannels: state.activeChannels,
+        lastMessageAt: state.lastMessageAt,
+        lastSyncedAt: state.lastSyncedAt,
+        allowLive: ctx.config.allowLive,
+        requireConfirm: ctx.config.requireConfirm,
+      });
     }
   );
 
   server.registerTool(
     "get_active_cue",
     {
-      description: "Return the active cue text and completion percent from OSC cache",
+      description: "Return the active cue text, list/number, and completion percent from OSC cache",
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true },
     },
     async () => {
-      const { activeCue } = ctx.listener.getState();
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(activeCue, null, 2) }],
-      };
+      const state = ctx.listener.getState();
+      return jsonResult({ ...state.activeCue, lastSyncedAt: state.lastSyncedAt });
     }
   );
 
@@ -42,15 +49,44 @@ export function registerQueryTools(server: McpServer, ctx: EosContext): void {
       annotations: { readOnlyHint: true },
     },
     async () => {
-      const { commandLine } = ctx.listener.getState();
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ commandLine: commandLine ?? "" }, null, 2),
-          },
-        ],
-      };
+      const { commandLine, lastSyncedAt } = ctx.listener.getState();
+      return jsonResult({ commandLine: commandLine ?? "", lastSyncedAt });
+    }
+  );
+
+  server.registerTool(
+    "get_fader_labels_levels",
+    {
+      description:
+        "Return cached OSC fader bank labels and levels. Empty until fader_bank_config has been sent this session.",
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      const state = ctx.listener.getState();
+      return jsonResult({
+        faders: state.faders,
+        levels: state.faderLevels,
+        labels: state.faderLabels,
+        lastSyncedAt: state.lastSyncedAt,
+      });
+    }
+  );
+
+  server.registerTool(
+    "get_direct_selects",
+    {
+      description:
+        "Return cached OSC direct select labels. Empty until direct_select_bank_create has been sent this session.",
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      const state = ctx.listener.getState();
+      return jsonResult({
+        directSelects: state.directSelects,
+        lastSyncedAt: state.lastSyncedAt,
+      });
     }
   );
 
@@ -64,14 +100,11 @@ export function registerQueryTools(server: McpServer, ctx: EosContext): void {
     },
     async ({ confirm }) => {
       if (ctx.config.requireConfirm && !confirm) {
-        return {
-          content: [{ type: "text" as const, text: "Pass confirm=true to reset OSC state." }],
-          isError: true,
-        };
+        return jsonResult({ ok: false, error: "Pass confirm=true to reset OSC state." }, true);
       }
 
       await ctx.client.send(oscReset());
-      return { content: [{ type: "text" as const, text: "OSC reset sent" }] };
+      return jsonResult({ ok: true, action: "osc_reset", address: "/eos/reset" });
     }
   );
 
@@ -89,9 +122,7 @@ export function registerQueryTools(server: McpServer, ctx: EosContext): void {
     async ({ address, timeoutMs, useRegex }) => {
       const pattern = useRegex ? new RegExp(address) : address;
       const message = await ctx.listener.waitFor(pattern, timeoutMs ?? 3000);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify(message, null, 2) }],
-      };
+      return jsonResult(message);
     }
   );
 }

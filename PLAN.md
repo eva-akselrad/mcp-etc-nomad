@@ -445,21 +445,21 @@ Lighting desks control **real power to rig**. The MCP must not treat channels ca
 
 ### Phase 0 — Foundation (week 1 equivalent effort)
 
-- [ ] Rename repo skeleton from HashiCorp Nomad → `mcp-etc-nomad`
-- [ ] `EosClient` UDP send/receive
-- [ ] Config: `EOS_HOST`, `EOS_PORT_TX`, `EOS_PORT_RX`, `EOS_PROTOCOL`
-- [ ] Tools: `eos_command`, `channel_set_level`, `cue_fire`, `get_console_state`
-- [ ] Listener: `/eos/out/event/state`, `/eos/out/active/cue`
-- [ ] README + Nomad OSC setup guide
+- [x] Rename repo skeleton from HashiCorp Nomad → `mcp-etc-nomad`
+- [x] `EosClient` UDP send/receive
+- [x] Config: `EOS_HOST`, `EOS_PORT_TX`, `EOS_PORT_RX`, `EOS_PROTOCOL`
+- [x] Tools: `eos_command`, `channel_set_level`, `cue_fire`, `get_console_state`
+- [x] Listener: `/eos/out/event/state`, `/eos/out/active/cue`
+- [x] README + Nomad OSC setup guide
 - [ ] Smoke test against Nomad offline
 
 ### Phase 1 — Playback parity (operator mode)
 
-- [ ] All playback, fader, sub, palette, macro tools
-- [ ] Key/softkey mapping table from ETC OSC Dictionary
-- [ ] Cue list + fader + direct select banks
-- [ ] Resources: playback + active cue
-- [ ] `eos-live` prompt + live confirmation gates
+- [x] All playback, fader, sub, palette, macro tools
+- [x] Key/softkey mapping table from ETC OSC Dictionary
+- [x] Cue list + fader + direct select banks
+- [x] Resources: playback + active cue
+- [x] `eos-live` prompt + live confirmation gates
 
 ### Phase 2 — Programming parity
 

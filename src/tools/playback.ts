@@ -1,142 +1,144 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
-import { cueFire, cueSelect, keyPress, macroFire, magicSheet, subLevel } from "../eos/addresses.js";
+import {
+  cueFire,
+  cueListGo,
+  cueListStop,
+  cueSelect,
+  magicSheet,
+} from "../eos/addresses.js";
 import type { EosContext } from "../eos/context.js";
-import { assertLiveAllowed } from "../eos/context.js";
+import { gateCueFire, gateLiveWrite, jsonResult, liveWriteFields, sendButton } from "./helpers.js";
+
+const cueNumber = z.union([z.number(), z.string()]);
 
 export function registerPlaybackTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
     "cue_select",
     {
-      description: "Select a cue, optionally within a cue list",
+      description: "Select a cue (and optional part) on the command line, optionally within a cue list",
       inputSchema: z.object({
-        cue: z.union([z.number(), z.string()]),
+        cue: cueNumber,
         cueList: z.number().int().positive().optional(),
+        part: z.number().int().positive().optional(),
       }),
     },
-    async ({ cue, cueList }) => {
-      const address = cueSelect(cueList);
-      await ctx.client.send(address, cue);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify({ cueList, cue }, null, 2) }],
-      };
+    async ({ cue, cueList, part }) => {
+      if (part !== undefined && cueList !== undefined) {
+        await ctx.client.send(cueSelect(cueList, cue), part);
+      } else {
+        await ctx.client.send(cueSelect(cueList), cue);
+      }
+      return jsonResult({ ok: true, action: "cue_select", cueList, cue, part });
     }
   );
 
   server.registerTool(
     "cue_fire",
     {
-      description: "Fire a cue (does not follow GO sequencing unless using cue_go)",
+      description:
+        "Fire a specific cue immediately (does not follow GO sequencing). Use cue_go to advance.",
       inputSchema: z.object({
-        cue: z.union([z.number(), z.string()]),
+        cue: cueNumber,
         cueList: z.number().int().positive().optional(),
-        confirm: z.boolean().optional(),
+        part: z.number().int().positive().optional(),
+        ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ cue, cueList, confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
-      }
+    async ({ cue, cueList, part, confirm, allow_live }) => {
+      const blocked = gateCueFire(ctx, { confirm, allow_live });
+      if (blocked) return blocked;
 
-      await ctx.client.send(cueFire(cueList, cue), cue);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify({ cueList, cue }, null, 2) }],
-      };
+      const address = cueFire(cueList, cue, part);
+      if (cueList === undefined) {
+        await ctx.client.send(address, cue);
+      } else {
+        await ctx.client.send(address, 1.0);
+      }
+      return jsonResult({ ok: true, action: "cue_fire", address, cueList, cue, part });
     }
   );
 
   server.registerTool(
     "cue_go",
     {
-      description: "Press the console Go key (sequential cue advance)",
+      description: "Press the console Go key (Go_0) — sequential advance on the main playback",
       inputSchema: z.object({
-        confirm: z.boolean().optional(),
+        ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
-      }
+    async ({ confirm, allow_live }) => {
+      const blocked = gateCueFire(ctx, { confirm, allow_live });
+      if (blocked) return blocked;
 
-      await ctx.client.send(keyPress("go"), 0);
-      return { content: [{ type: "text" as const, text: "Go pressed" }] };
+      const address = "/eos/key/go_0";
+      await sendButton(ctx, address);
+      return jsonResult({ ok: true, action: "cue_go", address });
     }
   );
 
   server.registerTool(
-    "key_press",
+    "cue_stop",
     {
-      description: "Press an Eos hardkey by OSC name (e.g. 'go', 'clear', 'stop')",
+      description:
+        "Stop/Back: halt a running fade, or go back a cue if nothing is fading. Optional cue list uses /eos/cues/{n}/stop.",
       inputSchema: z.object({
-        key: z.string().describe("OSC key name from Eos Virtual Keyboard"),
-        edge: z.enum(["down", "up", "tap"]).optional(),
-        confirm: z.boolean().optional(),
+        cueList: z.number().int().positive().optional(),
+        ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ key, edge, confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
+    async ({ cueList, confirm, allow_live }) => {
+      const blocked = gateLiveWrite(ctx, { confirm, allow_live });
+      if (blocked) return blocked;
+
+      if (cueList === undefined) {
+        await sendButton(ctx, "/eos/key/stop");
+        return jsonResult({ ok: true, action: "cue_stop", address: "/eos/key/stop" });
       }
 
-      const address = keyPress(key);
-      if (edge === "tap" || edge === undefined) {
-        await ctx.client.send(address, 0);
-      } else {
-        await ctx.client.send(address, edge === "down" ? 1.0 : 0.0);
-      }
-
-      return { content: [{ type: "text" as const, text: JSON.stringify({ key, edge }, null, 2) }] };
+      const address = cueListStop(cueList);
+      await sendButton(ctx, address);
+      return jsonResult({ ok: true, action: "cue_stop", address, cueList });
     }
   );
 
   server.registerTool(
-    "macro_fire",
+    "cue_list_go",
     {
-      description: "Run a macro by number",
+      description: "Go on a cue list via /eos/cues/{list}/fire (main playback if cueList omitted)",
       inputSchema: z.object({
-        macro: z.number().int().positive(),
-        confirm: z.boolean().optional(),
+        cueList: z.number().int().positive().optional(),
+        ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ macro, confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
-      }
+    async ({ cueList, confirm, allow_live }) => {
+      const blocked = gateCueFire(ctx, { confirm, allow_live });
+      if (blocked) return blocked;
 
-      await ctx.client.send(macroFire(), macro);
-      return { content: [{ type: "text" as const, text: `Macro ${macro} fired` }] };
+      const address = cueListGo(cueList);
+      await sendButton(ctx, address);
+      return jsonResult({ ok: true, action: "cue_list_go", address, cueList });
     }
   );
 
   server.registerTool(
-    "submaster_set_level",
+    "get_pending_cues",
     {
-      description: "Set a submaster level (0.0-1.0)",
-      inputSchema: z.object({
-        sub: z.number().int().positive(),
-        level: z.number().min(0).max(1),
-        confirm: z.boolean().optional(),
-      }),
-      annotations: { destructiveHint: true },
+      description: "Return pending cue text and OSC cache entries from /eos/out/pending/cue/*",
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
     },
-    async ({ sub, level, confirm }) => {
-      const blocked = assertLiveAllowed(ctx, confirm);
-      if (blocked) {
-        return { content: [{ type: "text" as const, text: blocked }], isError: true };
-      }
-
-      await ctx.client.send(subLevel(sub), level);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify({ sub, level }, null, 2) }],
-      };
+    async () => {
+      const state = ctx.listener.getState();
+      return jsonResult({
+        pendingCue: state.pendingCue,
+        pendingCues: state.pendingCues,
+        lastSyncedAt: state.lastSyncedAt,
+      });
     }
   );
 
@@ -151,9 +153,7 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
     },
     async ({ sheet, view }) => {
       await ctx.client.send(magicSheet(sheet, view), view ?? sheet);
-      return {
-        content: [{ type: "text" as const, text: JSON.stringify({ sheet, view }, null, 2) }],
-      };
+      return jsonResult({ ok: true, action: "magic_sheet_open", sheet, view });
     }
   );
 }

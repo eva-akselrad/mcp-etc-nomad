@@ -15,11 +15,11 @@ serveStdio(() => {
   const listener = new EosListener(config);
   listener.start();
 
-  const ctx: EosContext = { config, client, listener };
+  const ctx: EosContext = { config, client, listener, cueFireLog: [] };
 
   const server = new McpServer({
     name: "mcp-etc-nomad",
-    version: "0.1.0",
+    version: "0.2.0",
   });
 
   registerTools(server, ctx);

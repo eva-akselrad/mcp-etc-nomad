@@ -6,17 +6,50 @@ export interface EosContext {
   config: ServerConfig;
   client: EosClient;
   listener: EosListener;
+  /** Timestamps of recent cue fires for rate limiting. */
+  cueFireLog: number[];
 }
 
-export function assertLiveAllowed(ctx: EosContext, confirm?: boolean): string | null {
-  const state = ctx.listener.getState();
-  if (state.consoleMode === "live" && !ctx.config.allowLive) {
-    if (!confirm) {
-      return "Console is LIVE. Pass confirm=true to execute, or set EOS_ALLOW_LIVE=true.";
-    }
+export interface LiveWriteOptions {
+  confirm?: boolean;
+  allow_live?: boolean;
+}
+
+export function assertLiveAllowed(
+  ctx: EosContext,
+  confirmOrOptions?: boolean | LiveWriteOptions
+): string | null {
+  const options: LiveWriteOptions =
+    typeof confirmOrOptions === "boolean" ? { confirm: confirmOrOptions } : (confirmOrOptions ?? {});
+
+  if (ctx.config.requireConfirm && !options.confirm) {
+    return "Pass confirm=true to execute this action (EOS_REQUIRE_CONFIRM=true).";
   }
-  if (ctx.config.requireConfirm && !confirm) {
-    return "Pass confirm=true to execute this action.";
+
+  const mode = ctx.listener.getState().consoleMode;
+  const potentiallyLive = mode === "live" || mode === "unknown";
+  if (potentiallyLive && !ctx.config.allowLive && !options.allow_live) {
+    const where = mode === "unknown" ? "LIVE or unconfirmed (no /eos/out/event/state yet)" : "LIVE";
+    return (
+      `Console is ${where}. Pass allow_live=true to execute, or set EOS_ALLOW_LIVE=true. ` +
+      "Read get_console_state or eos://playback/state first."
+    );
   }
+
+  return null;
+}
+
+export function assertCueFireRate(ctx: EosContext, confirm?: boolean): string | null {
+  const now = Date.now();
+  const windowMs = 60_000;
+  const max = ctx.config.maxCueFiresPerMinute;
+  ctx.cueFireLog = ctx.cueFireLog.filter((t) => now - t < windowMs);
+  if (ctx.cueFireLog.length >= max && !confirm) {
+    return (
+      `Cue fire rate limit: ${max} playback actions per minute. ` +
+      "Pass confirm=true to override, or wait before firing again."
+    );
+  }
+  ctx.cueFireLog.push(now);
   return null;
 }

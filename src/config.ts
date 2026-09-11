@@ -8,6 +8,7 @@ export interface ServerConfig {
   userId: number;
   allowLive: boolean;
   requireConfirm: boolean;
+  maxCueFiresPerMinute: number;
   auditLogPath?: string;
   eosVersion: string;
 }
@@ -34,6 +35,7 @@ export function loadConfig(): ServerConfig {
     userId: parseIntEnv(process.env.EOS_USER_ID, -1),
     allowLive: parseBool(process.env.EOS_ALLOW_LIVE, false),
     requireConfirm: parseBool(process.env.EOS_REQUIRE_CONFIRM, true),
+    maxCueFiresPerMinute: parseIntEnv(process.env.EOS_MAX_CUE_FIRES_PER_MIN, 12),
     auditLogPath: process.env.EOS_AUDIT_LOG,
     eosVersion: process.env.EOS_VERSION ?? "3.3.6",
   };
