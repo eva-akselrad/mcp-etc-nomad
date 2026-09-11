@@ -188,7 +188,7 @@ export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
     "network_session_leave",
     {
       description:
-        "Exit mirror mode (exit key). ECU role unchanged. Stop Mirroring softkey / ALT+F2 also works.",
+        "Exit mirror mode — needsManual facepanel steps (Stop Mirroring softkey / ALT+F2). No verified OSC key name.",
       inputSchema: z.object({
         ...liveWriteFields,
         ...systemWriteFields,
@@ -199,19 +199,19 @@ export function registerNetworkTools(server: McpServer, ctx: EosContext): void {
       const blocked = gateSystemWrite(ctx, args);
       if (blocked) return blocked;
 
-      const address = keyPress(normalizeOscKey("exit"));
-      await sendButton(ctx, address);
-
       return jsonResult({
         ok: true,
         action: "network_session_leave",
         needsManual: true,
-        sent: [address],
+        browserPath: "Facepanel: Stop Mirroring softkey or ALT+F2",
+        sent: [],
         notes: [
-          "Stop Mirroring softkey / ALT+F2 exits mirror (no documented OSC name).",
-          "Leaving session role requires ECU reboot — not this tool.",
+          "No documented OSC key for mirror exit — verify Virtual Keyboard Tab 7 before pressing any /eos/key name.",
+          "Stop Mirroring softkey / ALT+F2 exits mirror on most Eos builds.",
+          "Leaving session role (Primary/Backup/Client) requires ECU reboot — not this tool.",
           "detach_patch_device is for dimmer/RDM in Patch, not network leave.",
         ],
+        eosVersion: ctx.config.eosVersion,
       });
     }
   );
