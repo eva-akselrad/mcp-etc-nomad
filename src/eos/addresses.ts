@@ -1,6 +1,27 @@
 import type { ServerConfig } from "../config.js";
+import { normalizeOscKey } from "./keys.js";
 
 const USER_PREFIX = "/eos/user";
+
+export type PaletteType = "ip" | "fp" | "cp" | "bp";
+export type DirectSelectType =
+  | "chan"
+  | "group"
+  | "macro"
+  | "sub"
+  | "preset"
+  | "ip"
+  | "fp"
+  | "cp"
+  | "bp"
+  | "ms"
+  | "curve"
+  | "snap"
+  | "fx"
+  | "pixmap"
+  | "scene";
+
+export type FaderAction = "load" | "unload" | "stop" | "fire" | "home" | "out" | "min" | "max" | "full" | "level";
 
 export function withUserPrefix(config: ServerConfig, address: string): string {
   if (config.userId < 0) {
@@ -18,8 +39,21 @@ export function withUserPrefix(config: ServerConfig, address: string): string {
   return address;
 }
 
+/** Cue / palette numbers may be point cues (1.5) but must not contain `/`. */
+export function targetNumber(value: number | string, label = "target"): string {
+  const text = String(value).trim();
+  if (!/^\d+(\.\d+)?$/.test(text)) {
+    throw new Error(`Invalid ${label} "${value}" (expected a number such as 1 or 1.5)`);
+  }
+  return text;
+}
+
 export function channelLevel(channel: number): string {
   return `/eos/chan/${channel}`;
+}
+
+export function channelDmx(channel: number): string {
+  return `/eos/chan/${channel}/dmx`;
 }
 
 export function channelSelect(): string {
@@ -30,35 +64,170 @@ export function groupLevel(group: number): string {
   return `/eos/group/${group}`;
 }
 
-export function cueFire(cueList: number | undefined, cue: number | string): string {
+export function cueFire(cueList: number | undefined, cue: number | string, part?: number): string {
+  const cueSeg = targetNumber(cue, "cue");
   if (cueList === undefined) {
     return "/eos/cue/fire";
   }
-  return `/eos/cue/${cueList}/${cue}/fire`;
+  if (part !== undefined) {
+    return `/eos/cue/${cueList}/${cueSeg}/${part}/fire`;
+  }
+  return `/eos/cue/${cueList}/${cueSeg}/fire`;
 }
 
-export function cueSelect(cueList: number | undefined): string {
+export function cueSelect(cueList: number | undefined, cue?: number | string): string {
   if (cueList === undefined) {
     return "/eos/cue";
   }
-  return `/eos/cue/${cueList}`;
+  if (cue === undefined) {
+    return `/eos/cue/${cueList}`;
+  }
+  return `/eos/cue/${cueList}/${targetNumber(cue, "cue")}`;
+}
+
+export function cueListGo(cueList?: number): string {
+  if (cueList === undefined) {
+    return "/eos/cues/fire";
+  }
+  return `/eos/cues/${cueList}/fire`;
+}
+
+export function cueListStop(cueList?: number): string {
+  if (cueList === undefined) {
+    return "/eos/cues/stop";
+  }
+  return `/eos/cues/${cueList}/stop`;
+}
+
+export function cueListBankConfig(
+  bank: number,
+  cueList: number,
+  previous: number,
+  pending: number,
+  offset?: number
+): string {
+  const base = `/eos/cuelist/${bank}/config/${cueList}/${previous}/${pending}`;
+  if (offset === undefined) {
+    return base;
+  }
+  return `${base}/${offset}`;
+}
+
+export function cueListBankPage(bank: number, delta: number): string {
+  return `/eos/cuelist/${bank}/page/${delta}`;
+}
+
+export function cueListBankSelect(bank: number, cue: number | string): string {
+  return `/eos/cuelist/${bank}/select/${targetNumber(cue, "cue")}`;
+}
+
+export function cueListBankReset(bank: number): string {
+  return `/eos/cuelist/${bank}/reset`;
+}
+
+export function faderBankConfig(bank: number, count: number, page?: number): string {
+  if (page === undefined) {
+    return `/eos/fader/${bank}/config/${count}`;
+  }
+  return `/eos/fader/${bank}/config/${page}/${count}`;
+}
+
+export function faderLevel(bank: number, fader: number): string {
+  return `/eos/fader/${bank}/${fader}`;
+}
+
+export function faderAction(bank: number, fader: number, action: FaderAction): string {
+  return `/eos/fader/${bank}/${fader}/${action}`;
+}
+
+export function faderBankPage(bank: number, delta: number): string {
+  return `/eos/fader/${bank}/page/${delta}`;
+}
+
+export function faderBankReset(bank: number): string {
+  return `/eos/fader/${bank}/reset`;
+}
+
+export function directSelectBankCreate(
+  bank: number,
+  type: DirectSelectType,
+  count: number,
+  options?: { flexi?: boolean; page?: number }
+): string {
+  const parts = [`/eos/ds/${bank}/${type}`];
+  if (options?.flexi) {
+    parts.push("flexi");
+  }
+  if (options?.page !== undefined) {
+    parts.push(String(options.page));
+  }
+  parts.push(String(count));
+  return parts.join("/");
+}
+
+export function directSelectBankPage(bank: number, delta: number): string {
+  return `/eos/ds/${bank}/page/${delta}`;
+}
+
+export function directSelectPress(bank: number, button: number): string {
+  return `/eos/ds/${bank}/${button}`;
 }
 
 export function keyPress(keyName: string): string {
-  const normalized = keyName.trim().replace(/\s+/g, "_").toLowerCase();
-  return `/eos/key/${normalized}`;
+  return `/eos/key/${normalizeOscKey(keyName)}`;
+}
+
+export function softkeyPress(index: number): string {
+  return `/eos/softkey/${index}`;
 }
 
 export function macroFire(): string {
   return "/eos/macro/fire";
 }
 
+export function macroFireNumber(macro: number): string {
+  return `/eos/macro/${macro}/fire`;
+}
+
+export function macroSelect(): string {
+  return "/eos/macro";
+}
+
 export function subLevel(sub: number): string {
   return `/eos/sub/${sub}`;
 }
 
-export function paletteFire(type: "ip" | "fp" | "cp" | "bp", palette: number): string {
-  return `/eos/${type}/fire=${palette}`;
+export function subSelect(): string {
+  return "/eos/sub";
+}
+
+export function subFire(sub?: number): string {
+  if (sub === undefined) {
+    return "/eos/sub/fire";
+  }
+  return `/eos/sub/${sub}/fire`;
+}
+
+export function paletteSelect(type: PaletteType): string {
+  return `/eos/${type}`;
+}
+
+export function paletteFire(type: PaletteType, palette?: number): string {
+  if (palette === undefined) {
+    return `/eos/${type}/fire`;
+  }
+  return `/eos/${type}/${palette}/fire`;
+}
+
+export function presetSelect(): string {
+  return "/eos/preset";
+}
+
+export function presetFire(preset?: number): string {
+  if (preset === undefined) {
+    return "/eos/preset/fire";
+  }
+  return `/eos/preset/${preset}/fire`;
 }
 
 export function commandLine(path: "cmd" | "newcmd" | "event"): string {
@@ -75,7 +244,11 @@ export function atLevel(): string {
 
 export function magicSheet(sheet: number, view?: number): string {
   if (view === undefined) {
-    return `/eos/ms=${sheet}`;
+    return "/eos/ms";
   }
-  return `/eos/ms/${sheet}=${view}`;
+  return `/eos/ms/${sheet}`;
+}
+
+export function stagingModeKey(): string {
+  return "/eos/key/staging_mode";
 }

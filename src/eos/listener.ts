@@ -71,7 +71,9 @@ export class EosListener extends EventEmitter {
 
   private handleMessage(message: OscMessage): void {
     this.state.connected = true;
-    this.state.lastMessageAt = new Date().toISOString();
+    const now = new Date().toISOString();
+    this.state.lastMessageAt = now;
+    this.state.lastSyncedAt = now;
     this.updateState(message);
     this.emit("message", message);
 
@@ -109,18 +111,81 @@ export class EosListener extends EventEmitter {
       this.state.activeCue.percent = Number(args[0]);
     }
 
+    const activeCueMatch = address.match(/^\/eos\/out\/active\/cue\/([^/]+)\/([^/]+)$/);
+    if (activeCueMatch) {
+      this.state.activeCue.cueList = Number(activeCueMatch[1]);
+      this.state.activeCue.cue = activeCueMatch[2];
+      if (typeof args[0] === "number") {
+        this.state.activeCue.percent = args[0];
+      }
+    }
+
     if (address === "/eos/out/active/chan") {
       this.state.activeChannels = String(args[0] ?? "");
     }
 
-    const faderMatch = address.match(/^\/eos\/out\/fader\/(\d+)\/(\d+)$/);
-    if (faderMatch && typeof args[0] === "number") {
-      this.state.faderLevels[`${faderMatch[1]}/${faderMatch[2]}`] = args[0];
+    if (address === "/eos/out/pending/cue/text") {
+      this.state.pendingCue.text = String(args[0] ?? "");
+    }
+
+    const pendingCueMatch = address.match(/^\/eos\/out\/pending\/cue\/([^/]+)\/([^/]+)$/);
+    if (pendingCueMatch) {
+      this.state.pendingCue.cueList = Number(pendingCueMatch[1]);
+      this.state.pendingCue.cue = pendingCueMatch[2];
     }
 
     if (address.startsWith("/eos/out/pending/cue")) {
       this.state.pendingCues[address] = args;
+      this.state.pendingCue.raw = { ...this.state.pendingCue.raw, [address]: args };
     }
+
+    const faderNameMatch = address.match(/^\/eos\/out\/fader\/(\d+)\/(\d+)\/name$/);
+    if (faderNameMatch) {
+      const key = `${faderNameMatch[1]}/${faderNameMatch[2]}`;
+      const label = String(args[0] ?? "");
+      this.state.faderLabels[key] = label;
+      this.upsertFader(Number(faderNameMatch[1]), Number(faderNameMatch[2]), { label });
+    }
+
+    const faderMatch = address.match(/^\/eos\/out\/fader\/(\d+)\/(\d+)$/);
+    if (faderMatch) {
+      const key = `${faderMatch[1]}/${faderMatch[2]}`;
+      if (typeof args[0] === "number") {
+        this.state.faderLevels[key] = args[0];
+        this.upsertFader(Number(faderMatch[1]), Number(faderMatch[2]), { level: args[0] });
+      } else if (typeof args[0] === "string") {
+        this.state.faderLabels[key] = args[0];
+        this.upsertFader(Number(faderMatch[1]), Number(faderMatch[2]), { label: args[0] });
+      }
+    }
+
+    const dsBankMatch = address.match(/^\/eos\/out\/ds\/(\d+)$/);
+    if (dsBankMatch) {
+      this.state.directSelects[dsBankMatch[1]] = {
+        bank: Number(dsBankMatch[1]),
+        label: String(args[0] ?? ""),
+      };
+    }
+
+    const dsButtonMatch = address.match(/^\/eos\/out\/ds\/(\d+)\/(\d+)$/);
+    if (dsButtonMatch) {
+      const key = `${dsButtonMatch[1]}/${dsButtonMatch[2]}`;
+      this.state.directSelects[key] = {
+        bank: Number(dsButtonMatch[1]),
+        index: Number(dsButtonMatch[2]),
+        label: String(args[0] ?? ""),
+      };
+    }
+
+    if (address.startsWith("/eos/out/cuelist/")) {
+      this.state.cueListBanks[address] = args;
+    }
+  }
+
+  private upsertFader(bank: number, index: number, patch: { level?: number; label?: string }): void {
+    const key = `${bank}/${index}`;
+    const existing = this.state.faders[key] ?? { bank, index };
+    this.state.faders[key] = { ...existing, ...patch };
   }
 }
 
