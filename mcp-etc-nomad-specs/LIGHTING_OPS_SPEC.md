@@ -99,6 +99,12 @@ Thru extends `channel_select` and `channel_set_level`. Minus deselect uses `/_-%
 
 - `/eos/key/blackout` only — never Chan Thru Out
 
+### `park` / `unpark`
+
+- **Canonical** tools; `park_channel` / `unpark_channel` are deprecated aliases (same handler)
+- Shared `channels` + `ranges` selection; optional park `level` → CLI `Chan N Park At {level}`
+- CLI single Thru range or `method=key` for multi-channel park via `/eos/key/park`
+
 ### `show_save` (shared with Phase 3)
 
 Single implementation in `show_admin.ts` — do not duplicate in operator tools.

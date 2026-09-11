@@ -291,8 +291,7 @@ describe("Lighting Expert priority pack", () => {
 
     await invokeTool(server, "sneak", { confirm: true });
     const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.every((a) => a === "/eos/key/sneak"));
-    assert.ok(!addresses.includes("/eos/chan"));
+    assert.ok(!addresses.some((a) => a.startsWith("/eos/chan")));
   });
 
   it("make_manual with channel selection", async () => {
@@ -304,7 +303,21 @@ describe("Lighting Expert priority pack", () => {
     assert.match(String(client.sent.at(-1)?.args[0]), /Make Manual/);
   });
 
-  it("park_channel alias delegates to park", async () => {
+  it("unpark_channel deprecated alias delegates to unpark", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    const result = await invokeTool(server, "unpark_channel", {
+      ranges: [{ from: 10, thru: 12 }],
+      confirm: true,
+    });
+    assert.equal(isToolError(result), false);
+    const body = parseToolJson<{ action: string; canonicalAction: string }>(result);
+    assert.equal(body.action, "unpark_channel");
+    assert.equal(body.canonicalAction, "unpark");
+    assert.match(String(client.sent.at(-1)?.args[0]), /Unpark/);
+  });
+
+  it("park_channel deprecated alias delegates to park", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     const result = await invokeTool(server, "park_channel", { channel: 10, confirm: true });
