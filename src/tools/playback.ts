@@ -62,19 +62,21 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
     "go_to_cue",
     {
       description:
-        "Go To Cue (GTC) via CLI /eos/newcmd (preferred): 'Go To Cue 5', 'Go To Cue 1/10', 'Go To Cue Out'. NOT /eos/cue/.../fire or /eos/key/go_0. Optional method=key uses /eos/key/go_to_cue.",
+        "Go To Cue (GTC) via CLI /eos/newcmd (preferred): 'Go To Cue 5', 'Go To Cue 1/10', 'Go To Cue Out', 'Go To Cue 0'. NOT /eos/cue/.../fire or /eos/key/go_0. Optional method=key uses /eos/key/go_to_cue or go_to_cue_0.",
       inputSchema: goToCueInputSchema,
       annotations: { destructiveHint: true },
     },
-    async ({ cue, cueList, out, time, assert, method, confirm, allow_live, override_rate_limit }) => {
+    async ({ cue, cueList, out, cueZero, time, assert, method, confirm, allow_live, override_rate_limit }) => {
       const blocked = gateCueFire(ctx, { confirm, allow_live, override_rate_limit });
       if (blocked) return blocked;
 
       const hasCue = cue !== undefined;
       const hasOut = out === true;
-      if (hasCue === hasOut) {
+      const hasCueZero = cueZero === true;
+      const count = [hasCue, hasOut, hasCueZero].filter(Boolean).length;
+      if (count !== 1) {
         return jsonResult(
-          { ok: false, error: "Provide cue OR out=true (XOR), not both and not neither." },
+          { ok: false, error: "Provide exactly one of cue, out=true, or cueZero=true (XOR)." },
           true
         );
       }
@@ -96,7 +98,7 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
           }
         }
 
-        const line = buildGoToCueCommand({ cue, cueList, out });
+        const line = buildGoToCueCommand({ cue, cueList, out, cueZero });
         steps.push(await sendCliStep(ctx, line));
 
         return jsonResult({
@@ -108,11 +110,12 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
           cueList,
           cue,
           out,
+          cueZero,
           time,
         });
       }
 
-      // Key fallback: /eos/key/go_to_cue — not go_0
+      // Key fallback: /eos/key/go_to_cue or go_to_cue_0 — not go_0
       if (time !== undefined && (time === 0 || time === "0")) {
         await sendButton(ctx, keyPress("assert"));
         steps.push("/eos/key/assert");
@@ -120,7 +123,7 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
         steps.push(await sendCliStep(ctx, `Time ${time}`));
       }
 
-      const gtcAddress = keyPress("go_to_cue");
+      const gtcAddress = keyPress(hasCueZero ? "go_to_cue_0" : "go_to_cue");
       await sendButton(ctx, gtcAddress);
       steps.push(gtcAddress);
 
@@ -132,6 +135,7 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
         cueList,
         cue,
         out,
+        cueZero,
         time,
         note: "CLI method preferred; key path does not enter cue digits — select cue first if needed.",
       });

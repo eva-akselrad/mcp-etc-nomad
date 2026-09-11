@@ -13,6 +13,7 @@ import {
 } from "../eos/addresses.js";
 import type { EosContext } from "../eos/context.js";
 import { gateLiveWrite, jsonResult, liveWriteFields, sendButton } from "./helpers.js";
+import { submasterLevelSchema } from "../specs/lighting-ops.js";
 
 const faderActionEnum = z.enum([
   "load",
@@ -183,10 +184,10 @@ export function registerFaderTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
     "submaster_set_level",
     {
-      description: "Set a submaster level (0.0–1.0)",
+      description: "Set a submaster level 0–100% (mapped to /eos/sub/{n} as 0.0–1.0)",
       inputSchema: z.object({
         sub: z.number().int().positive(),
-        level: z.number().min(0).max(1),
+        level: submasterLevelSchema,
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
@@ -195,9 +196,17 @@ export function registerFaderTools(server: McpServer, ctx: EosContext): void {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
+      const faderValue = level / 100;
       const address = subLevel(sub);
-      await ctx.client.send(address, level);
-      return jsonResult({ ok: true, action: "submaster_set_level", address, sub, level });
+      await ctx.client.send(address, faderValue);
+      return jsonResult({
+        ok: true,
+        action: "submaster_set_level",
+        address,
+        sub,
+        level,
+        faderValue,
+      });
     }
   );
 

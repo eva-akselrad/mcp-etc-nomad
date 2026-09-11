@@ -251,7 +251,7 @@ describe("tool TX paths via recording client", () => {
   it("submaster_set_level sends intensity on /eos/sub/{n}", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
-    await invokeTool(server, "submaster_set_level", { sub: 5, level: 0.75, confirm: true });
+    await invokeTool(server, "submaster_set_level", { sub: 5, level: 75, confirm: true });
     assert.equal(client.sent.at(-1)?.address, "/eos/sub/5");
     assert.equal(client.sent.at(-1)?.args[0], 0.75);
   });

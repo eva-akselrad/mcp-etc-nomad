@@ -41,7 +41,7 @@ Playback checklist:
 - Timed jump: go_to_cue with confirm + allow_live
 - Next in list: cue_go or cue_list_go
 - Stop fade: cue_hold. Go back: cue_back
-- Subs: submaster_set_level (0–1); submaster_bump for bump (submaster_fire alias)
+- Subs: submaster_set_level (0–100 → OSC 0–1); submaster_bump for bump (submaster_fire alias)
 - GM: grandmaster_set_level 0–100 (maps to /eos/fader/0/1). Blackout is separate — never GM=0
 - Palettes: palette_recall (palette_fire alias) type=cp|ip|fp|bp
 `;

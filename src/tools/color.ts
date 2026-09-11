@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { channelColorHs, channelColorRgb, channelParam, paramSet } from "../eos/addresses.js";
 import type { EosContext } from "../eos/context.js";
+import { rgbPercentSchema } from "../specs/lighting-ops.js";
 import { gateLiveWrite, jsonResult, liveWriteFields } from "./helpers.js";
 
 export function registerColorTools(server: McpServer, ctx: EosContext): void {
@@ -32,23 +33,35 @@ export function registerColorTools(server: McpServer, ctx: EosContext): void {
     "color_set_rgb",
     {
       description:
-        "Set RGB color on selection (/eos/color/rgb) or channel (/eos/chan/{n}/color/rgb). Components 0.0–1.0.",
+        "Set RGB color on selection (/eos/color/rgb) or channel (/eos/chan/{n}/color/rgb). Components r/g/b 0–100 (mapped to OSC 0.0–1.0).",
       inputSchema: z.object({
-        red: z.number().min(0).max(1),
-        green: z.number().min(0).max(1),
-        blue: z.number().min(0).max(1),
+        r: rgbPercentSchema,
+        g: rgbPercentSchema,
+        b: rgbPercentSchema,
         channel: z.number().int().positive().optional(),
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ red, green, blue, channel, confirm, allow_live }) => {
+    async ({ r, g, b, channel, confirm, allow_live }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
       const address = channelColorRgb(channel);
-      await ctx.client.send(address, red, green, blue);
-      return jsonResult({ ok: true, action: "color_set_rgb", address, red, green, blue, channel });
+      const oscR = r / 100;
+      const oscG = g / 100;
+      const oscB = b / 100;
+      await ctx.client.send(address, oscR, oscG, oscB);
+      return jsonResult({
+        ok: true,
+        action: "color_set_rgb",
+        address,
+        r,
+        g,
+        b,
+        osc: { r: oscR, g: oscG, b: oscB },
+        channel,
+      });
     }
   );
 
@@ -56,22 +69,40 @@ export function registerColorTools(server: McpServer, ctx: EosContext): void {
     "channel_set_param",
     {
       description:
-        "Set a moving-light parameter (pan, tilt, gobo, …) via /eos/chan/{n}/param/{name} (0–100) or /eos/param/{name} for selection.",
+        "Set a moving-light parameter (pan, tilt, gobo, …) via /eos/chan/{n}/param/{name} or /eos/param/{name} for selection. value 0–100.",
       inputSchema: z.object({
         param: z.string().describe("Parameter name, e.g. pan, tilt, gobo"),
-        level: z.number().min(0).max(100),
+        value: z.number().min(0).max(100).describe("Parameter value 0–100 (canonical)."),
+        level: z
+          .number()
+          .min(0)
+          .max(100)
+          .optional()
+          .describe("Deprecated alias of value."),
         channel: z.number().int().positive().optional(),
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ param, level, channel, confirm, allow_live }) => {
+    async ({ param, value, level, channel, confirm, allow_live }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
+      const effectiveValue = value ?? level;
+      if (effectiveValue === undefined) {
+        return jsonResult({ ok: false, error: "Pass value (0–100) for channel_set_param." }, true);
+      }
+
       const address = channel !== undefined ? channelParam(channel, param) : paramSet(param);
-      await ctx.client.send(address, level);
-      return jsonResult({ ok: true, action: "channel_set_param", address, param, level, channel });
+      await ctx.client.send(address, effectiveValue);
+      return jsonResult({
+        ok: true,
+        action: "channel_set_param",
+        address,
+        param,
+        value: effectiveValue,
+        channel,
+      });
     }
   );
 }
