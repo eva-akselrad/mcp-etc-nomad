@@ -21,7 +21,7 @@ serveStdio(() => {
 
   const server = new McpServer({
     name: "mcp-etc-nomad",
-    version: "0.4.0",
+    version: "1.0.0",
   });
 
   registerTools(server, ctx);

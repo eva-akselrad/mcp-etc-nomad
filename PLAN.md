@@ -480,10 +480,10 @@ Lighting desks control **real power to rig**. The MCP must not treat channels ca
 
 ### Phase 4 — Hardening & distribution
 
-- [ ] Full OSC address test suite (record/replay OSC captures)
-- [ ] CI without hardware (mock OSC peer)
-- [ ] npm publish `mcp-etc-nomad`
-- [ ] Optional Cloudflare Worker relay (remote desk) — only if needed
+- [x] Full OSC address test suite (record/replay OSC captures)
+- [x] CI without hardware (mock OSC peer)
+- [x] npm publish `mcp-etc-nomad`
+- [ ] Optional Cloudflare Worker relay (remote desk) — deferred; see README
 
 ---
 

@@ -26,6 +26,11 @@ export class MockOscPeer {
     { number: 2, uid: "grp-2", label: "Backlight", channels: [10, 11, 12] },
   ];
   private readonly cueLists = [{ number: 1, uid: "cl-1", label: "Main" }];
+  private readonly presets = [{ number: 1, uid: "pre-1", label: "Default" }];
+  private readonly palettes = {
+    ip: [{ number: 1, uid: "ip-1", label: "Full" }],
+    cp: [{ number: 2, uid: "cp-2", label: "Blue" }],
+  } as const;
   private readonly cues = [
     { cueList: 1, number: "1", uid: "cue-1", label: "House Full" },
     { cueList: 1, number: "5", uid: "cue-5", label: "Scene 5" },
@@ -53,6 +58,19 @@ export class MockOscPeer {
 
   private async respond(address: string, args: unknown[]): Promise<void> {
     await this.replyClient.send("/eos/out/event/state", this.consoleMode);
+
+    if (address === "/eos/cmd" || address === "/eos/newcmd" || address === "/eos/event") {
+      if (args[0] !== undefined) {
+        await this.replyClient.send("/eos/out/cmd", String(args[0]));
+      }
+    }
+
+    const cueFireMatch = address.match(/^\/eos\/cue\/(\d+)\/([^/]+)\/fire$/);
+    if (cueFireMatch) {
+      const [, list, cue] = cueFireMatch;
+      await this.replyClient.send("/eos/out/active/cue/text", `Cue ${list}/${cue}`);
+      await this.replyClient.send(`/eos/out/active/cue/${list}/${cue}`, 1.0);
+    }
 
     const faderConfig = address.match(/^\/eos\/fader\/(\d+)\/config\//);
     if (faderConfig) {
@@ -159,6 +177,41 @@ export class MockOscPeer {
 
     if (address === "/eos/subscribe") {
       return;
+    }
+
+    if (address === "/eos/get/preset/count") {
+      await this.replyClient.send("/eos/out/get/preset/count", this.presets.length);
+      return;
+    }
+
+    if (address === "/eos/get/preset/index" && args.length > 0) {
+      const preset = this.presets[Number(args[0])];
+      if (!preset) return;
+      await this.replyClient.send(
+        `/eos/out/get/preset/${preset.number}/list/0`,
+        0,
+        preset.uid,
+        preset.label
+      );
+      return;
+    }
+
+    for (const type of ["ip", "cp"] as const) {
+      if (address === `/eos/get/${type}/count`) {
+        await this.replyClient.send(`/eos/out/get/${type}/count`, this.palettes[type].length);
+        return;
+      }
+      if (address === `/eos/get/${type}/index` && args.length > 0) {
+        const palette = this.palettes[type][Number(args[0])];
+        if (!palette) return;
+        await this.replyClient.send(
+          `/eos/out/get/${type}/${palette.number}/list/0`,
+          0,
+          palette.uid,
+          palette.label
+        );
+        return;
+      }
     }
   }
 

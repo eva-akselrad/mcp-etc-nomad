@@ -1,18 +1,32 @@
 {
   "name": "mcp-etc-nomad",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "MCP server for ETC Eos Family lighting consoles (ETCnomad) via OSC",
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
     "mcp-etc-nomad": "dist/index.js"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    ".env.example"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
-    "test": "node --import tsx --test test/**/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "prepublishOnly": "npm run typecheck && npm run build && npm test"
   },
   "keywords": [
     "mcp",
@@ -24,7 +38,16 @@
     "osc",
     "theatre"
   ],
+  "author": "eva-akselrad",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eva-akselrad/mcp-etc-nomad.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eva-akselrad/mcp-etc-nomad/issues"
+  },
+  "homepage": "https://github.com/eva-akselrad/mcp-etc-nomad#readme",
   "engines": {
     "node": ">=20"
   },
