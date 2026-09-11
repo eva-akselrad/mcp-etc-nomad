@@ -252,3 +252,44 @@ export function magicSheet(sheet: number, view?: number): string {
 export function stagingModeKey(): string {
   return "/eos/key/staging_mode";
 }
+
+/** OSC Get — request show-data sync (ETC Dictionary /eos/get/*). */
+export function getSubscribe(enable: boolean): string {
+  return `/eos/subscribe=${enable ? 1 : 0}`;
+}
+
+export function getGroupCount(): string {
+  return "/eos/get/group/count";
+}
+
+export function getGroupIndex(index: number): string {
+  return `/eos/get/group/index/${index}`;
+}
+
+export function getGroup(number: number): string {
+  return `/eos/get/group/${number}`;
+}
+
+export function getCueListCount(): string {
+  return "/eos/get/cuelist/count";
+}
+
+export function getCueListIndex(index: number): string {
+  return `/eos/get/cuelist/index/${index}`;
+}
+
+export function getCueList(number: number): string {
+  return `/eos/get/cuelist/${number}`;
+}
+
+export function getCueCount(cueList: number): string {
+  return `/eos/get/cue/${cueList}/noparts/count`;
+}
+
+export function getCueIndex(cueList: number, index: number): string {
+  return `/eos/get/cue/${cueList}/noparts/index/${index}`;
+}
+
+export function getCue(cueList: number, cue: number | string): string {
+  return `/eos/get/cue/${cueList}/${targetNumber(cue, "cue")}/0`;
+}

@@ -43,6 +43,56 @@ Playback checklist:
 - Macros: macro_fire
 `;
 
+const PROGRAMMER_INSTRUCTIONS = `You are programming an ETC Eos Family console (ETCnomad or hardware) via MCP.
+
+Workflow:
+1. Prefer blind mode for programming — read get_console_state; live writes need allow_live.
+2. Use typed programming tools before raw eos_command:
+   - cue_record, cue_update — record/update cues from the programmer
+   - programming_copy, programming_move, programming_delete — bulk cue/effect operations
+   - group_record, target_label — groups and labels
+3. sync_show_targets refreshes eos://show/groups and eos://show/cues/{list} caches.
+4. query_groups / query_cuelists / query_cues read the cache without hitting the desk.
+
+Record patterns:
+- Select channels/levels → cue_record cue=5 cueList=1
+- Or: Cue 5 Enter → Record Enter (via eos_command)
+- Update existing: cue_update cue=5
+- Block/merge: pass block=true or merge=true on record/update
+
+Copy / move / delete:
+- programming_copy sourceType=cue sourceFrom=1 sourceThru=5 destType=cue dest=10
+- programming_move sourceType=cue source=5 destType=cue dest=10
+- programming_delete requires confirm_delete=true (destructive) plus confirm=true
+
+Groups:
+- group_record group=1 channelFrom=1 channelThru=20 label="Wash"
+- Or select channels → Group N Record
+
+Always terminate CLI with Enter (# also works). String RX must be enabled in Nomad OSC setup.
+`;
+
+const PATCH_INSTRUCTIONS = `You are patching fixtures on an ETC Eos Family console via MCP.
+
+Rules:
+- Use patch_channel for simple patch CLI; complex patch/unpatch/RDM may need eos_command.
+- Nomad offline: output limits apply (dongle tier). Document universe and address conflicts.
+- Patch syntax examples:
+  - Patch 101 Enter
+  - Patch 1 Thru 10 Type "Source Four" Enter
+  - Patch 101 Address 1 Universe 1 Enter
+- Unpatch: Delete Channel 101 Enter (programming_delete target via CLI or eos_command)
+- After patch changes, run sync_show_targets if you need updated group/cue context.
+
+Universes: Eos supports multiple universes; specify Universe N when addressing.
+Profiles: fixture type strings must match the console library (use browser or eos_command List Type).
+
+Safety:
+- Patching is destructive to show data — use confirm=true on writes.
+- In live mode, patching may affect output — pass allow_live=true when required.
+- Prefer blind/offline Nomad for bulk patch work.
+`;
+
 export function registerPrompts(server: McpServer, _ctx: EosContext): void {
   server.registerPrompt(
     "eos-operator",
@@ -55,6 +105,38 @@ export function registerPrompts(server: McpServer, _ctx: EosContext): void {
         {
           role: "user" as const,
           content: { type: "text" as const, text: OPERATOR_INSTRUCTIONS },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
+    "eos-programmer",
+    {
+      title: "Eos programming patterns",
+      description: "Record, update, block, copy, move, delete, groups, and sync resources",
+    },
+    () => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: { type: "text" as const, text: PROGRAMMER_INSTRUCTIONS },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
+    "eos-patch",
+    {
+      title: "Eos patch syntax",
+      description: "Patch channels, universes, fixture types, Nomad output limits",
+    },
+    () => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: { type: "text" as const, text: PATCH_INSTRUCTIONS },
         },
       ],
     })

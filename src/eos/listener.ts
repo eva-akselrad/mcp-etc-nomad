@@ -2,6 +2,13 @@ import { EventEmitter } from "node:events";
 import { Server } from "node-osc";
 import type { ServerConfig } from "../config.js";
 import { createInitialState, type EosState } from "./state.js";
+import {
+  cueKey,
+  cueListKey,
+  groupKey,
+  parseBaseRecordTarget,
+  parseOscNumberList,
+} from "./show-types.js";
 
 export interface OscMessage {
   address: string;
@@ -177,8 +184,83 @@ export class EosListener extends EventEmitter {
       };
     }
 
-    if (address.startsWith("/eos/out/cuelist/")) {
+    if (address.startsWith("/eos/out/cuelist/") && !address.includes("/get/")) {
       this.state.cueListBanks[address] = args;
+    }
+
+    this.updateShowDataFromGet(address, args);
+  }
+
+  private updateShowDataFromGet(address: string, args: unknown[]): void {
+    const groupListMatch = address.match(/^\/eos\/out\/get\/group\/(\d+)\/list\/0$/);
+    if (groupListMatch) {
+      const number = Number(groupListMatch[1]);
+      const base = parseBaseRecordTarget(args);
+      const existing = this.state.groups[groupKey(number)] ?? { number };
+      this.state.groups[groupKey(number)] = {
+        ...existing,
+        ...base,
+        raw: args,
+      };
+      return;
+    }
+
+    const groupChannelsMatch = address.match(
+      /^\/eos\/out\/get\/group\/(\d+)\/channels\/list\/0$/
+    );
+    if (groupChannelsMatch) {
+      const number = Number(groupChannelsMatch[1]);
+      const existing = this.state.groups[groupKey(number)] ?? { number };
+      this.state.groups[groupKey(number)] = {
+        ...existing,
+        channels: parseOscNumberList(args),
+        raw: existing.raw ? [existing.raw, args] : args,
+      };
+      return;
+    }
+
+    const cueListMatch = address.match(/^\/eos\/out\/get\/cuelist\/(\d+)\/list\/0$/);
+    if (cueListMatch) {
+      const number = Number(cueListMatch[1]);
+      const base = parseBaseRecordTarget(args);
+      const existing = this.state.cueLists[cueListKey(number)] ?? { number };
+      this.state.cueLists[cueListKey(number)] = {
+        ...existing,
+        ...base,
+        playbackMode: args[3] !== undefined ? String(args[3]) : existing.playbackMode,
+        faderMode: args[4] !== undefined ? String(args[4]) : existing.faderMode,
+        raw: args,
+      };
+      return;
+    }
+
+    const cueListLinkedMatch = address.match(/^\/eos\/out\/get\/cuelist\/(\d+)\/linked\/list\/0$/);
+    if (cueListLinkedMatch) {
+      const number = Number(cueListLinkedMatch[1]);
+      const existing = this.state.cueLists[cueListKey(number)] ?? { number };
+      this.state.cueLists[cueListKey(number)] = {
+        ...existing,
+        linkedCueLists: parseOscNumberList(args),
+      };
+      return;
+    }
+
+    const cueMatch = address.match(/^\/eos\/out\/get\/cue\/(\d+)\/([^/]+)\/0\/list\/0$/);
+    if (cueMatch) {
+      const cueList = Number(cueMatch[1]);
+      const cueNumber = cueMatch[2];
+      const base = parseBaseRecordTarget(args);
+      this.state.cues[cueKey(cueList, cueNumber)] = {
+        cueList,
+        number: cueNumber,
+        uid: base.uid,
+        label: base.label,
+        upTimeDurationMs: typeof args[3] === "number" ? args[3] : undefined,
+        upTimeDelayMs: typeof args[4] === "number" ? args[4] : undefined,
+        partCount: typeof args[26] === "number" ? args[26] : undefined,
+        notes: args[27] !== undefined ? String(args[27]) : undefined,
+        raw: args,
+      };
     }
   }
 

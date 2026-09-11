@@ -1,3 +1,5 @@
+import type { CueListState, CueState, GroupState, SyncStatus } from "./show-types.js";
+
 export type ConsoleMode = "blind" | "live" | "unknown";
 
 export interface ActiveCueState {
@@ -45,6 +47,10 @@ export interface EosState {
   directSelects: Record<string, DirectSelectSlotState>;
   cueListBanks: Record<string, unknown>;
   labels: Record<string, string>;
+  groups: Record<string, GroupState>;
+  cueLists: Record<string, CueListState>;
+  cues: Record<string, CueState>;
+  syncStatus: SyncStatus;
 }
 
 export function createInitialState(): EosState {
@@ -60,5 +66,9 @@ export function createInitialState(): EosState {
     directSelects: {},
     cueListBanks: {},
     labels: {},
+    groups: {},
+    cueLists: {},
+    cues: {},
+    syncStatus: { cuesAt: {} },
   };
 }
