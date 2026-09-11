@@ -356,9 +356,14 @@ export function getCueIndex(cueList: number): string {
   return `/eos/get/cue/${cueList}/noparts/index`;
 }
 
-/** Dictionary-primary cue index (fallback when noparts sync is empty). */
+/** Dictionary-primary cue index (/eos/get/cue/{list}/index + int arg). */
 export function getCueIndexPrimary(cueList: number): string {
   return `/eos/get/cue/${cueList}/index`;
+}
+
+/** Legacy noparts cue index — used when primary sync returns empty. */
+export function getCueIndexNoparts(cueList: number): string {
+  return getCueIndex(cueList);
 }
 
 export function getCue(cueList: number, cue: number | string): string {

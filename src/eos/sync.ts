@@ -226,28 +226,17 @@ async function syncCuesForList(
   cueList: number,
   timeoutMs: number
 ): Promise<number> {
-  await client.send(getCueCount(cueList));
-  const countMsg = await listener.waitFor(
-    new RegExp(`^/eos/out/get/cue/${cueList}/noparts/count$`),
-    timeoutMs
-  );
-  let count = Number(countMsg.args[0] ?? 0);
-
+  // Dictionary-primary: /eos/get/cue/{list}/index + arg; noparts fallback when empty.
+  let count = await syncCuesViaPrimaryIndex(client, listener, cueList, timeoutMs);
   if (count === 0) {
-    count = await syncCuesViaPrimaryIndex(client, listener, cueList, timeoutMs);
-  } else {
-    for (let index = 0; index < count; index++) {
-      await client.send(getCueIndex(cueList), index);
-      await listener.waitFor(outGetList0(`cue/${cueList}/[^/]+/0`), timeoutMs);
-      await sleep(INDEX_STEP_MS);
-    }
+    count = await syncCuesViaNopartsIndex(client, listener, cueList, timeoutMs);
   }
 
   listener.getState().syncStatus.cuesAt[String(cueList)] = new Date().toISOString();
   return count;
 }
 
-/** Dictionary-primary /eos/get/cue/{list}/index when noparts returns empty. */
+/** Dictionary-primary /eos/get/cue/{list}/index + int arg. */
 async function syncCuesViaPrimaryIndex(
   client: EosClient,
   listener: EosListener,
@@ -266,6 +255,29 @@ async function syncCuesViaPrimaryIndex(
     }
   }
   return index;
+}
+
+/** Legacy noparts index when Dictionary-primary sync returns empty. */
+async function syncCuesViaNopartsIndex(
+  client: EosClient,
+  listener: EosListener,
+  cueList: number,
+  timeoutMs: number
+): Promise<number> {
+  await client.send(getCueCount(cueList));
+  const countMsg = await listener.waitFor(
+    new RegExp(`^/eos/out/get/cue/${cueList}/noparts/count$`),
+    timeoutMs
+  );
+  const count = Number(countMsg.args[0] ?? 0);
+
+  for (let index = 0; index < count; index++) {
+    await client.send(getCueIndex(cueList), index);
+    await listener.waitFor(outGetList0(`cue/${cueList}/[^/]+/0`), timeoutMs);
+    await sleep(INDEX_STEP_MS);
+  }
+
+  return count;
 }
 
 async function syncPresetsFromConsole(

@@ -246,7 +246,7 @@ export function registerFaderTools(server: McpServer, ctx: EosContext): void {
   server.registerTool(
     "submaster_fire",
     {
-      description: "Bump a submaster (legacy alias name submaster_bump).",
+      description: "Bump a submaster (legacy alias of submaster_bump).",
       inputSchema: z.object(subBumpFields),
       annotations: { destructiveHint: true },
     },

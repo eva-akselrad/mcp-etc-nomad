@@ -88,7 +88,7 @@ Single implementation in `show_admin.ts` — quick/save/save_as via keys/CLI, `c
 
 ## Cue sync
 
-Primary Dictionary index: `/eos/get/cue/{list}/index` + arg. Fallback when noparts sync is empty: try primary index path.
+Dictionary-primary cue index: `/eos/get/cue/{list}/index` + int arg (preferred). Fallback to `/eos/get/cue/{list}/noparts/index` when primary returns empty.
 
 ## Open items (domain residual)
 
