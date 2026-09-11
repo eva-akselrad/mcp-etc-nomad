@@ -46,6 +46,13 @@ export interface SyncResult {
 const DEFAULT_TIMEOUT_MS = 5000;
 const INDEX_STEP_MS = 25;
 
+/** Eos may append `/{argCount}` after `/list/0` on multipart /eos/out/get replies. */
+const LIST_0_SUFFIX = String.raw`(?:/\d+)?$`;
+
+function outGetList0(pathAfterGet: string): RegExp {
+  return new RegExp(`^/eos/out/get/${pathAfterGet}/list/0${LIST_0_SUFFIX}`);
+}
+
 export async function syncShowTargets(
   client: EosClient,
   listener: EosListener,
@@ -68,7 +75,7 @@ export async function syncShowTargets(
   const paletteCounts: Record<string, number> = {};
 
   if (subscribe) {
-    await client.send(getSubscribe(true));
+    await client.send(getSubscribe(), 1);
     listener.getState().syncStatus.subscribed = true;
   }
 
@@ -133,11 +140,8 @@ async function syncGroupsFromConsole(
 
   const groups: Record<string, GroupState> = {};
   for (let index = 0; index < count; index++) {
-    await client.send(getGroupIndex(index));
-    const listMsg = await listener.waitFor(
-      new RegExp(`^/eos/out/get/group/\\d+/list/0$`),
-      timeoutMs
-    );
+    await client.send(getGroupIndex(), index);
+    const listMsg = await listener.waitFor(outGetList0("group/\\d+"), timeoutMs);
     const groupNumber = Number(listMsg.address.split("/")[5]);
     const base = parseBaseRecordTarget(listMsg.args);
     const group: GroupState = {
@@ -149,7 +153,7 @@ async function syncGroupsFromConsole(
 
     try {
       const channelsMsg = await listener.waitFor(
-        new RegExp(`^/eos/out/get/group/${groupNumber}/channels/list/0$`),
+        outGetList0(`group/${groupNumber}/channels`),
         timeoutMs
       );
       group.channels = channelsMsg.args
@@ -180,11 +184,8 @@ async function syncCueListsFromConsole(
 
   const cueLists: Record<string, CueListState> = {};
   for (let index = 0; index < count; index++) {
-    await client.send(getCueListIndex(index));
-    const listMsg = await listener.waitFor(
-      new RegExp(`^/eos/out/get/cuelist/\\d+/list/0$`),
-      timeoutMs
-    );
+    await client.send(getCueListIndex(), index);
+    const listMsg = await listener.waitFor(outGetList0("cuelist/\\d+"), timeoutMs);
     const listNumber = Number(listMsg.address.split("/")[5]);
     const base = parseBaseRecordTarget(listMsg.args);
     const cueList: CueListState = {
@@ -198,7 +199,7 @@ async function syncCueListsFromConsole(
 
     try {
       const linkedMsg = await listener.waitFor(
-        new RegExp(`^/eos/out/get/cuelist/${listNumber}/linked/list/0$`),
+        outGetList0(`cuelist/${listNumber}/links`),
         timeoutMs
       );
       cueList.linkedCueLists = linkedMsg.args
@@ -232,11 +233,8 @@ async function syncCuesForList(
   const count = Number(countMsg.args[0] ?? 0);
 
   for (let index = 0; index < count; index++) {
-    await client.send(getCueIndex(cueList, index));
-    await listener.waitFor(
-      new RegExp(`^/eos/out/get/cue/${cueList}/[^/]+/0/list/0$`),
-      timeoutMs
-    );
+    await client.send(getCueIndex(cueList), index);
+    await listener.waitFor(outGetList0(`cue/${cueList}/[^/]+/0`), timeoutMs);
     await sleep(INDEX_STEP_MS);
   }
 
@@ -255,11 +253,8 @@ async function syncPresetsFromConsole(
 
   const presets: Record<string, PresetState> = {};
   for (let index = 0; index < count; index++) {
-    await client.send(getPresetIndex(index));
-    const listMsg = await listener.waitFor(
-      new RegExp(`^/eos/out/get/preset/\\d+/list/0$`),
-      timeoutMs
-    );
+    await client.send(getPresetIndex(), index);
+    const listMsg = await listener.waitFor(outGetList0("preset/\\d+"), timeoutMs);
     const number = Number(listMsg.address.split("/")[5]);
     const base = parseBaseRecordTarget(listMsg.args);
     presets[presetKey(number)] = { number, uid: base.uid, label: base.label, raw: listMsg.args };
@@ -285,8 +280,8 @@ async function syncPalettesOfType(
   const count = Number(countMsg.args[0] ?? 0);
 
   for (let index = 0; index < count; index++) {
-    await client.send(getPaletteIndex(type, index));
-    await listener.waitFor(new RegExp(`^/eos/out/get/${type}/\\d+/list/0$`), timeoutMs);
+    await client.send(getPaletteIndex(type), index);
+    await listener.waitFor(outGetList0(`${type}/\\d+`), timeoutMs);
     await sleep(INDEX_STEP_MS);
   }
 

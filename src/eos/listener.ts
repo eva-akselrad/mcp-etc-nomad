@@ -269,7 +269,7 @@ export class EosListener extends EventEmitter {
       return;
     }
 
-    const cueListLinkedMatch = address.match(/^\/eos\/out\/get\/cuelist\/(\d+)\/linked\/list\/0$/);
+    const cueListLinkedMatch = address.match(/^\/eos\/out\/get\/cuelist\/(\d+)\/links\/list\/0/);
     if (cueListLinkedMatch) {
       const number = Number(cueListLinkedMatch[1]);
       const existing = this.state.cueLists[cueListKey(number)] ?? { number };

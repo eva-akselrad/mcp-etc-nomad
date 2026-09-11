@@ -94,9 +94,8 @@ export class MockOscPeer {
       return;
     }
 
-    const groupIndex = address.match(/^\/eos\/get\/group\/index\/(\d+)$/);
-    if (groupIndex) {
-      const group = this.groups[Number(groupIndex[1])];
+    if (address === "/eos/get/group/index" && args.length > 0) {
+      const group = this.groups[Number(args[0])];
       if (!group) return;
       await this.replyClient.send(
         `/eos/out/get/group/${group.number}/list/0`,
@@ -118,9 +117,8 @@ export class MockOscPeer {
       return;
     }
 
-    const cueListIndex = address.match(/^\/eos\/get\/cuelist\/index\/(\d+)$/);
-    if (cueListIndex) {
-      const list = this.cueLists[Number(cueListIndex[1])];
+    if (address === "/eos/get/cuelist/index" && args.length > 0) {
+      const list = this.cueLists[Number(args[0])];
       if (!list) return;
       await this.replyClient.send(
         `/eos/out/get/cuelist/${list.number}/list/0`,
@@ -130,7 +128,7 @@ export class MockOscPeer {
         "default",
         "fader"
       );
-      await this.replyClient.send(`/eos/out/get/cuelist/${list.number}/linked/list/0`, 0, list.uid);
+      await this.replyClient.send(`/eos/out/get/cuelist/${list.number}/links/list/0`, 0, list.uid);
       return;
     }
 
@@ -142,10 +140,10 @@ export class MockOscPeer {
       return;
     }
 
-    const cueIndex = address.match(/^\/eos\/get\/cue\/(\d+)\/noparts\/index\/(\d+)$/);
-    if (cueIndex) {
+    const cueIndex = address.match(/^\/eos\/get\/cue\/(\d+)\/noparts\/index$/);
+    if (cueIndex && args.length > 0) {
       const list = Number(cueIndex[1]);
-      const index = Number(cueIndex[2]);
+      const index = Number(args[0]);
       const cue = this.cues.filter((c) => c.cueList === list)[index];
       if (!cue) return;
       await this.replyClient.send(
@@ -159,7 +157,7 @@ export class MockOscPeer {
       return;
     }
 
-    if (address.startsWith("/eos/subscribe=")) {
+    if (address === "/eos/subscribe") {
       return;
     }
   }

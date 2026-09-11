@@ -320,16 +320,16 @@ export function stagingModeKey(): string {
 }
 
 /** OSC Get — request show-data sync (ETC Dictionary /eos/get/*). */
-export function getSubscribe(enable: boolean): string {
-  return `/eos/subscribe=${enable ? 1 : 0}`;
+export function getSubscribe(): string {
+  return "/eos/subscribe";
 }
 
 export function getGroupCount(): string {
   return "/eos/get/group/count";
 }
 
-export function getGroupIndex(index: number): string {
-  return `/eos/get/group/index/${index}`;
+export function getGroupIndex(): string {
+  return "/eos/get/group/index";
 }
 
 export function getGroup(number: number): string {
@@ -340,8 +340,8 @@ export function getCueListCount(): string {
   return "/eos/get/cuelist/count";
 }
 
-export function getCueListIndex(index: number): string {
-  return `/eos/get/cuelist/index/${index}`;
+export function getCueListIndex(): string {
+  return "/eos/get/cuelist/index";
 }
 
 export function getCueList(number: number): string {
@@ -352,8 +352,8 @@ export function getCueCount(cueList: number): string {
   return `/eos/get/cue/${cueList}/noparts/count`;
 }
 
-export function getCueIndex(cueList: number, index: number): string {
-  return `/eos/get/cue/${cueList}/noparts/index/${index}`;
+export function getCueIndex(cueList: number): string {
+  return `/eos/get/cue/${cueList}/noparts/index`;
 }
 
 export function getCue(cueList: number, cue: number | string): string {
@@ -386,14 +386,14 @@ export function getPresetCount(): string {
   return "/eos/get/preset/count";
 }
 
-export function getPresetIndex(index: number): string {
-  return `/eos/get/preset/index/${index}`;
+export function getPresetIndex(): string {
+  return "/eos/get/preset/index";
 }
 
 export function getPaletteCount(type: PaletteType): string {
   return `/eos/get/${type}/count`;
 }
 
-export function getPaletteIndex(type: PaletteType, index: number): string {
-  return `/eos/get/${type}/index/${index}`;
+export function getPaletteIndex(type: PaletteType): string {
+  return `/eos/get/${type}/index`;
 }

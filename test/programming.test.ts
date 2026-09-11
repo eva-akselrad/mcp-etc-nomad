@@ -55,7 +55,26 @@ describe("programming command builders (Eos OSC domain)", () => {
         destType: "cue",
         dest: 10,
       }),
-      "Copy Cue 1 Thru Cue 5 Cue 10"
+      "Copy Cue 1 Thru 5 Cue 10"
+    );
+  });
+
+  it("cue delete with part: Delete Cue 1/5 Part 2", () => {
+    assert.equal(
+      buildDeleteCommand({
+        target: "cue",
+        from: 5,
+        cueList: 1,
+        part: 2,
+      }),
+      "Delete Cue 1/5 Part 2"
+    );
+  });
+
+  it("cue delete range on active list: Delete Cue 1 Thru 5", () => {
+    assert.equal(
+      buildDeleteCommand({ target: "cue", from: 1, thru: 5 }),
+      "Delete Cue 1 Thru 5"
     );
   });
 
@@ -70,6 +89,58 @@ describe("spec-aligned programming tools", () => {
     await invokeTool(server, "record_cue", { cue: 5, cueList: 1, refresh_cache: false });
     assert.equal(client.sent.at(-1)?.address, "/eos/newcmd");
     assert.match(String(client.sent.at(-1)?.args[0]), /Record Cue 1\/5 Enter$/);
+  });
+
+  for (const mode of ["live", "unknown"] as const) {
+    it(`record_cue refuses ${mode} with confirm alone`, async () => {
+      const { server, client } = createHarness({ consoleMode: mode });
+      const blocked = await invokeTool(server, "record_cue", {
+        cue: 5,
+        cueList: 1,
+        confirm: true,
+        refresh_cache: false,
+      });
+      assert.equal(isToolError(blocked), true);
+      assert.match(parseToolJson<{ error: string }>(blocked).error, /allow_live=true/);
+      assert.equal(client.sent.length, 0);
+    });
+
+    it(`record_cue allows ${mode} with confirm and allow_live`, async () => {
+      const { server, client } = createHarness({ consoleMode: mode, config: { requireConfirm: false } });
+      const ok = await invokeTool(server, "record_cue", {
+        cue: 5,
+        cueList: 1,
+        allow_live: true,
+        refresh_cache: false,
+      });
+      assert.equal(isToolError(ok), false);
+      assert.equal(client.sent.at(-1)?.address, "/eos/newcmd");
+    });
+  }
+
+  it("update_cue refuses unknown with confirm alone", async () => {
+    const { server, client } = createHarness({ consoleMode: "unknown" });
+    const blocked = await invokeTool(server, "update_cue", {
+      cue: 5,
+      cueList: 1,
+      confirm: true,
+      refresh_cache: false,
+    });
+    assert.equal(isToolError(blocked), true);
+    assert.match(parseToolJson<{ error: string }>(blocked).error, /allow_live=true/);
+    assert.equal(client.sent.length, 0);
+  });
+
+  it("update_cue allows unknown with allow_live", async () => {
+    const { server, client } = createHarness({ consoleMode: "unknown", config: { requireConfirm: false } });
+    const ok = await invokeTool(server, "update_cue", {
+      cue: 5,
+      cueList: 1,
+      allow_live: true,
+      refresh_cache: false,
+    });
+    assert.equal(isToolError(ok), false);
+    assert.equal(client.sent.at(-1)?.address, "/eos/newcmd");
   });
 
   it("delete_target requires confirm_delete", async () => {

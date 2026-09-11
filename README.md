@@ -64,7 +64,7 @@ Programming writes use the same `confirm` / `allow_live` gates as playback. Dest
 
 **Prompts:** `eos-programmer`, `eos-patch`
 
-Sync uses OSC `/eos/get/*` request/response (node-eos-console / EosSyncLib pattern): count → index → cache in listener state. Subscribe with `/eos/subscribe=1` on sync (default).
+Sync uses OSC `/eos/get/*` request/response (node-eos-console / EosSyncLib pattern): count → index → cache in listener state. Subscribe with `/eos/subscribe` + int arg `1` on sync (default).
 
 ## Quick start
 
@@ -98,15 +98,23 @@ Copy `.env.example` to `.env` and adjust.
 
 ## Testing
 
-**Mock OSC (no Nomad hardware):** the test harness in `test/` listens on a local UDP port, captures MCP tool TX packets, and sends canned `/eos/out/*` replies (see PLAN.md §11.1).
+**Mock OSC (no Nomad hardware):** `test/harness.ts` + `test/mock-osc-peer.ts` listen on a local UDP port, capture MCP tool TX packets, and send canned `/eos/out/*` replies (see PLAN.md §11.1).
 
 ```bash
 npm test
 ```
 
-Runs address builders, live/confirm gate checks, bank-config sequencing, and mock-peer integration tests. Fader level tests assert **TX only** — Eos echoes `/eos/out/fader` after ~3s, so the harness does not expect an immediate echo.
+| File | Coverage |
+|------|----------|
+| `test/osc-harness.test.ts` | Address builders, `assertLiveAllowed` gates, fader/cue bank TX sequencing |
+| `test/programming.test.ts` | CLI programming builders (Copy/Delete Thru), tool TX, `sync_show_targets` mock-peer integration |
+| `test/mock-osc-peer.ts` | Canned `/eos/get/*` + `/eos/out/get/*` multipart replies for sync |
 
-**Nomad offline smoke (manual):** with ETCnomad running and OSC enabled (see above), verify channel level, cue fire, and a command-line record. Full checklist: PLAN.md §11.2.
+Fader level tests assert **TX only** — Eos echoes `/eos/out/fader` after ~3s, so the harness does not expect an immediate echo.
+
+Programming tools (`record_cue`, `update_cue`, etc.) refuse LIVE/unknown console state unless `allow_live=true` (mock tests cover this). `sync_show_targets` + `get_groups` / `get_cuelists` / `get_cues` populate listener cache; MCP resources `eos://show/*` read that cache.
+
+**Nomad offline smoke (manual):** with ETCnomad running and OSC enabled (see above), verify channel level, cue fire, group+cue record via CLI (`record_cue`), and delete with `confirm_delete`. Full checklist: PLAN.md §11.2.
 
 ## Cursor / Claude Desktop
 
