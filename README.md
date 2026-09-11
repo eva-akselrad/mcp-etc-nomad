@@ -70,6 +70,18 @@ Use the console IP from Nomad Shell (not always `127.0.0.1` when MCP runs on ano
 
 Copy `.env.example` to `.env` and adjust.
 
+## Testing
+
+**Mock OSC (no Nomad hardware):** the test harness in `test/` listens on a local UDP port, captures MCP tool TX packets, and sends canned `/eos/out/*` replies (see PLAN.md §11.1).
+
+```bash
+npm test
+```
+
+Runs address builders, live/confirm gate checks, bank-config sequencing, and mock-peer integration tests. Fader level tests assert **TX only** — Eos echoes `/eos/out/fader` after ~3s, so the harness does not expect an immediate echo.
+
+**Nomad offline smoke (manual):** with ETCnomad running and OSC enabled (see above), verify channel level, cue fire, and a command-line record. Full checklist: PLAN.md §11.2.
+
 ## Cursor / Claude Desktop
 
 ```json
@@ -81,7 +93,9 @@ Copy `.env.example` to `.env` and adjust.
       "env": {
         "EOS_HOST": "192.168.1.50",
         "EOS_PORT_TX": "8000",
-        "EOS_PORT_RX": "9001"
+        "EOS_PORT_RX": "9001",
+        "EOS_ALLOW_LIVE": "false",
+        "EOS_REQUIRE_CONFIRM": "true"
       }
     }
   }
