@@ -407,7 +407,7 @@ describe("network session tools", () => {
     assert.equal(client.sent.length, 0);
   });
 
-  it("network_session_leave sends exit key when gates satisfied", async () => {
+  it("network_session_leave returns needsManual without unverified key TX", async () => {
     const { server, client } = createHarness({
       consoleMode: "blind",
       config: { requireConfirm: false },
@@ -416,9 +416,17 @@ describe("network session tools", () => {
       user_intent: "exit mirror mode on tech desk",
     });
     assert.equal(isToolError(result), false);
-    const body = parseToolJson<{ needsManual: boolean; sent: string[] }>(result);
+    const body = parseToolJson<{
+      needsManual: boolean;
+      browserPath: string;
+      sent: string[];
+      notes: string[];
+    }>(result);
     assert.equal(body.needsManual, true);
-    assert.ok(body.sent.some((s) => s.includes("/eos/key/exit")));
+    assert.match(body.browserPath, /Stop Mirroring|ALT\+F2/i);
+    assert.deepEqual(body.sent, []);
+    assert.equal(client.sent.length, 0);
+    assert.ok(body.notes.some((n) => /no documented OSC key/i.test(n)));
   });
 });
 

@@ -162,13 +162,13 @@ Fader level tests assert **TX only** — Eos echoes `/eos/out/fader` after ~3s, 
 
 Programming tools (`record_cue`, `update_cue`, etc.) refuse LIVE/unknown console state unless `allow_live=true` (mock tests cover this). `sync_show_targets` + `get_groups` / `get_cuelists` / `get_cues` populate listener cache; MCP resources `eos://show/*` read that cache.
 
-**Automated gates in `test/show-admin.test.ts`:** `show_load` / `show_merge` require `user_intent` (≥8 chars), refuse LIVE/unknown without `allow_live`, and require `confirm_path` when `EOS_REQUIRE_CONFIRM=true`. Default path is `needsManual` (no unverified Browser OSC keys); opt-in via `press_unverified_browser_keys`. `network_session_leave` requires `user_intent` when gating is on.
+**Automated gates in `test/show-admin.test.ts`:** `show_load` / `show_merge` require `user_intent` (≥8 chars), refuse LIVE/unknown without `allow_live`, and require `confirm_path` when `EOS_REQUIRE_CONFIRM=true`. Default path is `needsManual` (no unverified Browser OSC keys); opt-in via `press_unverified_browser_keys`. `network_session_leave` requires `user_intent` when gating is on and returns `needsManual` only (Stop Mirroring / ALT+F2 — no invented `/eos/key/exit`).
 
 **Nomad offline smoke (manual):** with ETCnomad running and OSC enabled (see above):
 
 1. **Playback / programming:** channel level, cue fire, group+cue record via CLI (`record_cue`), delete with `confirm_delete`
 2. **Show files (Browser):** `show_save` (quick save + path echo); `show_load` and `show_merge` with `user_intent` + `confirm_path` — complete the CIA Browser wizard on the desk (tools return `needsManual`; no auto-load/merge)
-3. **Network:** `network_session_leave` with `user_intent` to exit mirror mode; confirm exit key or Stop Mirroring softkey on desk
+3. **Network:** `network_session_leave` with `user_intent` — complete mirror exit on desk via Stop Mirroring softkey or ALT+F2 (tool returns `needsManual`; no OSC key TX)
 4. **Gates:** verify `show_merge` / `show_load` refuse LIVE without `allow_live`; `network_session_leave` requires `user_intent` when gating is on
 
 Full checklist: PLAN.md §11.2.
