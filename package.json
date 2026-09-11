@@ -1,6 +1,6 @@
 {
   "name": "mcp-etc-nomad",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MCP server for ETC Eos Family lighting consoles (ETCnomad) via OSC",
   "type": "module",
   "main": "dist/index.js",
@@ -31,10 +31,13 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
     "node-osc": "^11.0.0",
+    "osc-min": "^2.1.2",
+    "slip": "^1.0.2",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/slip": "^1.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

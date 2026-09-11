@@ -37,6 +37,24 @@ export interface DirectSelectSlotState {
   label?: string;
 }
 
+export interface SessionInfo {
+  raw?: unknown[];
+  lastEvent?: string;
+}
+
+export interface ConsoleGetCache {
+  processors?: unknown[];
+  userlist?: unknown[];
+  version?: unknown[];
+  session?: unknown[];
+}
+
+export interface ShowFileInfo {
+  path?: string;
+  lastEvent?: "saved" | "loaded" | "cleared" | string;
+  lastEventPath?: string;
+}
+
 export interface EosState {
   connected: boolean;
   lastMessageAt?: string;
@@ -44,6 +62,10 @@ export interface EosState {
   consoleMode: ConsoleMode;
   oscUserId?: number;
   commandLine?: string;
+  showPath?: string;
+  session?: SessionInfo;
+  showFile?: ShowFileInfo;
+  consoleGet?: ConsoleGetCache;
   activeCue: ActiveCueState;
   activeChannels?: string;
   pendingCue: PendingCueState;
@@ -66,6 +88,9 @@ export function createInitialState(): EosState {
   return {
     connected: false,
     consoleMode: "unknown",
+    showFile: {},
+    session: {},
+    consoleGet: {},
     activeCue: {},
     pendingCue: { raw: {} },
     pendingCues: {},

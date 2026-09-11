@@ -14,8 +14,8 @@ Control ETCnomad and Eos desks over **OSC** so an LLM can operate cues, levels, 
 |-------|--------|
 | 0 Foundation | Implemented |
 | 1 Playback parity | Implemented |
-| **2 Programming parity** | **Implemented** |
-| 3 Show & system admin | Not started |
+| 2 Programming parity | Implemented |
+| **3 Show & system admin** | **Implemented** |
 | 4 Hardening & distribution | Not started |
 
 ## Phase 1 (playback)
@@ -58,6 +58,25 @@ Programming writes use the same `confirm` / `allow_live` gates as playback. Dest
 **Prompts:** `eos-programmer`, `eos-patch`
 
 Sync uses OSC `/eos/get/*` request/response (node-eos-console / EosSyncLib pattern): count → index → cache in listener state. Subscribe with `/eos/subscribe` + int arg `1` on sync (default).
+
+## Phase 3 (show & system admin)
+
+Eos OSC domain rules: **no OSC Save/Load verbs** — Browser + `key_press` + CLI only. Never invent `usb1:/` or `.esf` paths.
+
+| Group | Tools |
+|-------|--------|
+| Show files | **`show_save`** (priority: `confirm_save` + path echo), `show_load`, `show_merge`, `show_export`; `get_show_path` |
+| Patch extras | `attach_patch_device`, `detach_patch_device` |
+| Troubleshoot | `identify_fixture`, `channel_check`, `highlight_channels` |
+| Network | `get_session_info`, `osc_set_user`, `network_session_join`, `network_session_leave` |
+
+**Gates:** `user_intent` for load/merge/join; `confirm_save` / `confirm_path` when `EOS_REQUIRE_CONFIRM=true`. Prefer Blind for load/merge. After load/merge, `sync_show_targets` + reconfigure banks.
+
+**TCP transport (real TCP OSC, not UDP retarget):** `EOS_PROTOCOL=tcp`. `3032` = OSC TCP 1.0 length headers (bidirectional); `3037` = Third Party OSC 1.1 SLIP (~realtime `/eos/out`). Custom ports OK (4703–4727+). Enable OSC RX+TX in Setup. UDP remains default; ETC prefers TCP.
+
+**Resources:** `eos://console/info`, `eos://console/session`, `eos://console/version`, `eos://show/path`
+
+**Prompts:** `nomad-setup`, `eos-showfile`
 
 ## Quick start
 
@@ -145,7 +164,7 @@ src/
 │   └── context.ts        # Shared context + live/confirm gates
 ├── tools/                # MCP tools (Phase 0–2)
 ├── resources/            # MCP resources (playback + show)
-└── prompts/              # eos-operator, eos-live, eos-programmer, eos-patch
+└── prompts/              # eos-operator, eos-live, eos-programmer, eos-patch, nomad-setup
 ```
 
 ## License

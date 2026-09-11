@@ -3,6 +3,28 @@ import type { EosContext } from "../eos/context.js";
 
 export function registerShowResources(server: McpServer, ctx: EosContext): void {
   server.registerResource(
+    "show-path",
+    "eos://show/path",
+    {
+      title: "Current show file path",
+      description: "Cached /eos/get/show/path and last show file event",
+      mimeType: "application/json",
+    },
+    async (uri) => {
+      const state = ctx.listener.getState();
+      const payload = {
+        path: state.showPath,
+        showFile: state.showFile,
+        lastSyncedAt: state.lastSyncedAt,
+        note: "Use get_show_path for a live /eos/get/show/path query.",
+      };
+      return {
+        contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(payload, null, 2) }],
+      };
+    }
+  );
+
+  server.registerResource(
     "show-groups",
     "eos://show/groups",
     {
