@@ -470,10 +470,10 @@ Lighting desks control **real power to rig**. The MCP must not treat channels ca
 
 ### Phase 3 — Show & system admin
 
-- [ ] Show save/load/merge/export wrappers
-- [ ] Patch/unpatch helpers
-- [ ] Network session tools (join/leave/identify)
-- [ ] TCP transport option
+- [x] Show save/load/merge/export wrappers
+- [x] Patch/unpatch helpers (+ attach/detach, identify, channel check)
+- [x] Network session tools (join/leave/identify)
+- [x] TCP transport option
 
 ### Phase 4 — Hardening & distribution
 
@@ -524,7 +524,8 @@ EOS_PORT_TX=8000          # Nomad OSC RX
 EOS_PORT_RX=9001          # Nomad OSC TX (MCP listens)
 EOS_RX_BIND=0.0.0.0
 EOS_PROTOCOL=udp          # udp | tcp
-EOS_TCP_PORT=3037         # if tcp
+EOS_TCP_PORT=3037         # 3037 third-party SLIP, 3032 native length
+EOS_TCP_MODE=slip         # slip | length (auto from port)
 
 # OSC user routing
 EOS_USER_ID=-1            # -1 = match console, 0 = background

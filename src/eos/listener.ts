@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { Server } from "node-osc";
 import type { ServerConfig } from "../config.js";
 import { createInitialState, type EosState } from "./state.js";
+import type { EosTcpLink } from "./tcp-link.js";
 import {
   cueKey,
   cueListKey,
@@ -27,12 +28,15 @@ type Waiter = {
 export class EosListener extends EventEmitter {
   private server: Server | null = null;
   private readonly config: ServerConfig;
+  private readonly tcpLink?: EosTcpLink;
+  private tcpUnsubscribe?: () => void;
   private state: EosState = createInitialState();
   private waiters: Waiter[] = [];
 
-  constructor(config: ServerConfig) {
+  constructor(config: ServerConfig, tcpLink?: EosTcpLink) {
     super();
     this.config = config;
+    this.tcpLink = tcpLink;
   }
 
   getState(): EosState {
@@ -40,6 +44,13 @@ export class EosListener extends EventEmitter {
   }
 
   start(): void {
+    if (this.config.protocol === "tcp") {
+      if (!this.tcpLink || this.tcpUnsubscribe) return;
+      this.tcpUnsubscribe = this.tcpLink.onMessage((message) => this.handleMessage(message));
+      void this.tcpLink.connect().catch((err) => this.emit("error", err));
+      return;
+    }
+
     if (this.server) return;
     this.server = new Server(this.config.portRx, this.config.rxBind);
     this.server.on("message", (msg: unknown[]) => {
@@ -50,6 +61,17 @@ export class EosListener extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    if (this.config.protocol === "tcp") {
+      this.tcpUnsubscribe?.();
+      this.tcpUnsubscribe = undefined;
+      for (const waiter of this.waiters) {
+        clearTimeout(waiter.timer);
+        waiter.reject(new Error("OSC listener stopped"));
+      }
+      this.waiters = [];
+      return;
+    }
+
     if (!this.server) return;
     await new Promise<void>((resolve) => {
       this.server?.close(() => resolve());
@@ -110,6 +132,35 @@ export class EosListener extends EventEmitter {
 
     if (address === "/eos/out/cmd") {
       this.state.commandLine = String(args[0] ?? "");
+    }
+
+    if (address === "/eos/out/get/show/path" && args[0] !== undefined) {
+      this.state.showPath = String(args[0]);
+      this.state.showFile = {
+        ...this.state.showFile,
+        path: String(args[0]),
+      };
+    }
+
+    if (address === "/eos/out/get/session") {
+      this.state.session = {
+        ...this.state.session,
+        raw: args,
+      };
+    }
+
+    const showEventMatch = address.match(/^\/eos\/out\/event\/show\/(\w+)$/);
+    if (showEventMatch) {
+      const event = showEventMatch[1];
+      this.state.showFile = {
+        ...this.state.showFile,
+        lastEvent: event,
+        lastEventPath: args[0] !== undefined ? String(args[0]) : undefined,
+        path: args[0] !== undefined ? String(args[0]) : this.state.showFile?.path,
+      };
+      if (args[0] !== undefined) {
+        this.state.showPath = String(args[0]);
+      }
     }
 
     if (address === "/eos/out/active/cue/text") {

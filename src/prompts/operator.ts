@@ -105,6 +105,32 @@ const PATCH_INSTRUCTIONS = `You are patching fixtures on an ETC Eos Family conso
 Nomad offline: dongle tier caps outputs. Multi-console: OSC to session Host only.
 `;
 
+const NOMAD_SETUP_INSTRUCTIONS = `You are configuring ETCnomad / Eos network and show-file operations via MCP.
+
+## Transport
+- UDP (default): TX to console OSC RX (8000), MCP listens on OSC TX (9001).
+- TCP: set EOS_PROTOCOL=tcp. Port 3037 = Third Party SLIP; 3032 = native length-prefixed OSC 1.0.
+- Pin EOS_VERSION — save/load/merge/export CLI syntax varies by version.
+
+## Show files (system ops)
+- show_save / show_load / show_merge / show_export wrap CLI via /eos/newcmd.
+- System tools need confirm=true AND user_intent="why" when EOS_REQUIRE_CONFIRM=true.
+- Prefer Blind for destructive show work. Watch /eos/out/event/show/* for save/load feedback.
+- Advanced merge partial components may still need Browser {Advanced}.
+
+## Multi-console
+- OSC must target the session Host (not clients).
+- Primary/Backup/Client role is set in ECU Welcome Screen at boot (Browser > File > Exit Eos).
+- network_session_join opens mirror dialog (open_mirror_dialog key); full role join is not CLI-only.
+- get_session_info queries /eos/get/session and /eos/get/show/path.
+
+## Troubleshooting
+- identify_fixture: Channel N → Test Fixture (OSC test_fixture).
+- channel_check: Channel N At 70 Check — then Next/Last to step.
+- highlight_channels: Channel/Group Highlight for visual identification.
+- attach_patch_device / detach_patch_device: dimmer/RDM attach in Patch display (not network join).
+`;
+
 export function registerPrompts(server: McpServer, _ctx: EosContext): void {
   server.registerPrompt(
     "eos-operator",
@@ -149,6 +175,22 @@ export function registerPrompts(server: McpServer, _ctx: EosContext): void {
         {
           role: "user" as const,
           content: { type: "text" as const, text: PATCH_INSTRUCTIONS },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
+    "nomad-setup",
+    {
+      title: "Nomad setup & system admin",
+      description: "Show files, TCP/UDP OSC, multi-console sessions, identify/troubleshoot",
+    },
+    () => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: { type: "text" as const, text: NOMAD_SETUP_INSTRUCTIONS },
         },
       ],
     })

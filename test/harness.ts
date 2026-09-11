@@ -22,12 +22,12 @@ export interface TestHarness {
 }
 
 export function makeTestConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
-  return {
+  const base = {
     host: "127.0.0.1",
     portTx: 18000,
     portRx: 19001,
     rxBind: "127.0.0.1",
-    protocol: "udp",
+    protocol: "udp" as const,
     tcpPort: 3037,
     userId: -1,
     allowLive: false,
@@ -36,6 +36,11 @@ export function makeTestConfig(overrides: Partial<ServerConfig> = {}): ServerCon
     eosVersion: "3.3.6",
     ...overrides,
   };
+  const tcpPort = base.tcpPort;
+  const tcpMode =
+    overrides.tcpMode ??
+    (tcpPort === 3032 ? "length" : "slip");
+  return { ...base, tcpMode };
 }
 
 class StubListener {

@@ -14,8 +14,8 @@ Control ETCnomad and Eos desks over **OSC** so an LLM can operate cues, levels, 
 |-------|--------|
 | 0 Foundation | Implemented |
 | 1 Playback parity | Implemented |
-| **2 Programming parity** | **Implemented** |
-| 3 Show & system admin | Not started |
+| 2 Programming parity | Implemented |
+| **3 Show & system admin** | **Implemented** |
 | 4 Hardening & distribution | Not started |
 
 ## Phase 1 (playback)
@@ -58,6 +58,21 @@ Programming writes use the same `confirm` / `allow_live` gates as playback. Dest
 **Prompts:** `eos-programmer`, `eos-patch`
 
 Sync uses OSC `/eos/get/*` request/response (node-eos-console / EosSyncLib pattern): count → index → cache in listener state. Subscribe with `/eos/subscribe` + int arg `1` on sync (default).
+
+## Phase 3 (show & system admin)
+
+System/show writes need `confirm=true` and `user_intent="why"` when `EOS_REQUIRE_CONFIRM=true`. Prefer Blind for save/load/merge.
+
+| Group | Tools |
+|-------|--------|
+| Show files | `show_save`, `show_load`, `show_merge`, `show_export` (CLI via `/eos/newcmd`; pin `EOS_VERSION`) |
+| Patch extras | `attach_patch_device`, `detach_patch_device` |
+| Troubleshoot | `identify_fixture`, `channel_check`, `highlight_channels` |
+| Network | `get_session_info`, `network_session_join`, `network_session_leave` |
+
+**TCP transport:** set `EOS_PROTOCOL=tcp`. Default port `3037` uses SLIP (Third Party OSC); port `3032` uses OSC 1.0 length-prefixed framing. Override with `EOS_TCP_MODE=slip|length`.
+
+**Prompts:** `nomad-setup`
 
 ## Quick start
 
@@ -145,7 +160,7 @@ src/
 │   └── context.ts        # Shared context + live/confirm gates
 ├── tools/                # MCP tools (Phase 0–2)
 ├── resources/            # MCP resources (playback + show)
-└── prompts/              # eos-operator, eos-live, eos-programmer, eos-patch
+└── prompts/              # eos-operator, eos-live, eos-programmer, eos-patch, nomad-setup
 ```
 
 ## License

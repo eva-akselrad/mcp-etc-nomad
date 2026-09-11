@@ -4,7 +4,10 @@ export interface ServerConfig {
   portRx: number;
   rxBind: string;
   protocol: "udp" | "tcp";
+  /** Eos TCP listen port: 3037 third-party SLIP (default) or 3032 native length-prefixed. */
   tcpPort: number;
+  /** TCP framing: slip (3037) or length (3032 OSC 1.0). */
+  tcpMode: "slip" | "length";
   userId: number;
   allowLive: boolean;
   requireConfirm: boolean;
@@ -32,6 +35,14 @@ export function loadConfig(): ServerConfig {
     rxBind: process.env.EOS_RX_BIND ?? "0.0.0.0",
     protocol: process.env.EOS_PROTOCOL === "tcp" ? "tcp" : "udp",
     tcpPort: parseIntEnv(process.env.EOS_TCP_PORT, 3037),
+    tcpMode:
+      process.env.EOS_TCP_MODE === "length"
+        ? "length"
+        : process.env.EOS_TCP_MODE === "slip"
+          ? "slip"
+          : parseIntEnv(process.env.EOS_TCP_PORT, 3037) === 3032
+            ? "length"
+            : "slip",
     userId: parseIntEnv(process.env.EOS_USER_ID, -1),
     allowLive: parseBool(process.env.EOS_ALLOW_LIVE, false),
     requireConfirm: parseBool(process.env.EOS_REQUIRE_CONFIRM, true),

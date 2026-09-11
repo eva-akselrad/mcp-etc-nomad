@@ -39,7 +39,41 @@ export type DestructiveWriteOptions = LiveWriteOptions & {
   confirm_delete?: boolean;
 };
 
+export type SystemWriteOptions = LiveWriteOptions & {
+  /** Explicit user intent for system/show-file operations (PLAN §8). */
+  user_intent?: string;
+};
+
+const systemWriteFields = {
+  user_intent: z
+    .string()
+    .optional()
+    .describe(
+      "Short description of why this system/show operation is being performed (required when EOS_REQUIRE_CONFIRM=true)."
+    ),
+};
+
+export { systemWriteFields };
+
 /** Destructive programming (delete) requires confirm_delete in addition to confirm. */
+/** System/show-file writes require confirm and an explicit user_intent string. */
+export function gateSystemWrite(ctx: EosContext, options: SystemWriteOptions) {
+  const live = gateLiveWrite(ctx, options);
+  if (live) return live;
+
+  if (ctx.config.requireConfirm && !options.user_intent?.trim()) {
+    return jsonResult(
+      {
+        ok: false,
+        error:
+          "Pass user_intent with a short description of this system operation (EOS_REQUIRE_CONFIRM=true).",
+      },
+      true
+    );
+  }
+  return null;
+}
+
 export function gateDestructiveWrite(ctx: EosContext, options: DestructiveWriteOptions) {
   const live = gateLiveWrite(ctx, options);
   if (live) return live;
