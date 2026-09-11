@@ -35,6 +35,28 @@ export function gateLiveWrite(ctx: EosContext, options: LiveWriteOptions) {
   return null;
 }
 
+export type DestructiveWriteOptions = LiveWriteOptions & {
+  confirm_delete?: boolean;
+};
+
+/** Destructive programming (delete) requires confirm_delete in addition to confirm. */
+export function gateDestructiveWrite(ctx: EosContext, options: DestructiveWriteOptions) {
+  const live = gateLiveWrite(ctx, options);
+  if (live) return live;
+
+  if (ctx.config.requireConfirm && !options.confirm_delete) {
+    return jsonResult(
+      {
+        ok: false,
+        error:
+          "Pass confirm_delete=true for destructive delete operations (EOS_REQUIRE_CONFIRM=true).",
+      },
+      true
+    );
+  }
+  return null;
+}
+
 export function gateCueFire(ctx: EosContext, options: LiveWriteInput) {
   const live = gateLiveWrite(ctx, options);
   if (live) return live;

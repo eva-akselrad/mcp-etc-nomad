@@ -43,6 +43,68 @@ Playback checklist:
 - Macros: macro_fire
 `;
 
+const PROGRAMMER_INSTRUCTIONS = `You are programming an ETC Eos Family console via MCP (Eos OSC domain rules).
+
+## Transport
+1. Programming ≈ /eos/cmd or /eos/newcmd — there is NO OSC Record verb. Typed tools use eos_new_command (/eos/newcmd) so leftover CLI does not corrupt the next action. Prefer eos_new_command for multi-step flows.
+2. Always terminate with # or Enter. Unterminated text stays on the command line.
+3. String RX must be ON (Setup → Show Control → OSC) or commands silently fail.
+4. /eos/event and /eos/newevent are background/event semantics — NOT interactive programming.
+5. Commands run as the OSC user. Blind/Live and selection are per that user. Patch wants Blind; live Record changes the running look.
+
+## Record / Update
+6. Record needs look + target:
+   - Two-step: Cue 5 Enter → Record Enter (style=two_step)
+   - One-shot: Record Cue 5 Enter (style=one_shot, default)
+7. Record vs Record Only (mode=record_only) — wrong choice overwrites or leaves empty targets.
+8. Update only commits manual/red values. After Go, Make Manual or re-select channels — else Update is useless.
+9. Pass scope on cue_update: all | cue_only | track. Live vs Blind Update dialogs differ on desk.
+10. Parts: Cue 1 Part 2 Enter then Record/Update — never assume multipart from bare cue number.
+
+## Copy / Move / Delete
+11. Cue copy: Copy Cue 1 Thru 5 Cue 10 Enter (copy_target). Omit cueList on active list.
+12. Channel Copy To ≠ patch copy. Live levels vs patch 111 Copy To 116 (patch_copy_to). {Plus Show}/{Only Show} softkeys change scope.
+13. Patch MOVE = double Copy To: 116 Copy To Copy To 120 (patch_move). Single Copy To is NOT move.
+14. Move Effect 1 At Effect 2 (move_target sourceType=effect) — do not reuse cue copy templates.
+15. Delete (delete_target): confirm=true AND confirm_delete=true. Desk may need second Enter. Prefer Blind. Sneak/Home/Out are NOT Delete.
+16. After record/copy/delete, refresh_cache runs sync_show_targets — do not trust stale eos://show/* resources.
+
+## Tools (Dictionary-aligned names)
+- record_cue, update_cue, record_group, record_preset, record_palette
+- copy_target, move_target, delete_target (+ confirm_delete)
+- label_target (/eos/set/.../label), group_set_channels (/eos/set/group/{n}/chans, Thru as ">")
+- patch_channel, patch_copy_to, patch_move, unpatch_channel (eos-patch)
+- sync_show_targets, get_groups, get_cuelists, get_cues, get_presets, get_palettes
+
+Pin EOS_VERSION in env for syntax hints. eos_command remains the parity backstop.
+`;
+
+const PATCH_INSTRUCTIONS = `You are patching fixtures on an ETC Eos Family console via MCP (Eos OSC domain rules).
+
+## Transport
+- Patch programming uses /eos/newcmd (typed tools) or /eos/cmd — String RX required or silent failure.
+- Commands run as OSC user; prefer Blind for patch work.
+
+## Patch rules
+17. Enter Patch display first on Live CLI (enter_patch_display=true) or syntax may misread.
+18. Pin EOS_VERSION — patch syntax is version-sensitive (check tool responses for eosVersion).
+19. Prefer explicit Address and Universe in patch_channel templates.
+20. Unpatch (unpatch_channel) ≠ Delete channel data (delete_target).
+21. Prefer fixtureTypeNumber over fixtureType names when automating (spaces in library names).
+
+## Examples
+- patch_channel channel=101 address=1 universe=1 fixtureTypeNumber=42 enter_patch_display=true
+- patch_copy_to sourceChannel=111 destChannel=116 (patch only, not live Copy To)
+- patch_move sourceChannel=116 destChannel=120 (double Copy To)
+- unpatch_channel channel=101 confirm=true confirm_delete=true
+
+## After patch
+- Run sync_show_targets before trusting eos://show/groups or cue caches.
+- Labels: label_target sends /eos/set/.../label; group_set_channels uses /eos/set/group/{n}/chans with "1 > 9" Thru syntax.
+
+Nomad offline: dongle tier caps outputs. Multi-console: OSC to session Host only.
+`;
+
 export function registerPrompts(server: McpServer, _ctx: EosContext): void {
   server.registerPrompt(
     "eos-operator",
@@ -55,6 +117,38 @@ export function registerPrompts(server: McpServer, _ctx: EosContext): void {
         {
           role: "user" as const,
           content: { type: "text" as const, text: OPERATOR_INSTRUCTIONS },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
+    "eos-programmer",
+    {
+      title: "Eos programming patterns",
+      description: "OSC/cmd transport, record/update/copy/move/delete, sync, Eos domain constraints",
+    },
+    () => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: { type: "text" as const, text: PROGRAMMER_INSTRUCTIONS },
+        },
+      ],
+    })
+  );
+
+  server.registerPrompt(
+    "eos-patch",
+    {
+      title: "Eos patch syntax",
+      description: "Patch display, Copy To vs move, unpatch, EOS_VERSION, Address/Universe",
+    },
+    () => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: { type: "text" as const, text: PATCH_INSTRUCTIONS },
         },
       ],
     })

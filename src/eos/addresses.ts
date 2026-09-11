@@ -252,3 +252,82 @@ export function magicSheet(sheet: number, view?: number): string {
 export function stagingModeKey(): string {
   return "/eos/key/staging_mode";
 }
+
+/** OSC Get — request show-data sync (ETC Dictionary /eos/get/*). */
+export function getSubscribe(enable: boolean): string {
+  return `/eos/subscribe=${enable ? 1 : 0}`;
+}
+
+export function getGroupCount(): string {
+  return "/eos/get/group/count";
+}
+
+export function getGroupIndex(index: number): string {
+  return `/eos/get/group/index/${index}`;
+}
+
+export function getGroup(number: number): string {
+  return `/eos/get/group/${number}`;
+}
+
+export function getCueListCount(): string {
+  return "/eos/get/cuelist/count";
+}
+
+export function getCueListIndex(index: number): string {
+  return `/eos/get/cuelist/index/${index}`;
+}
+
+export function getCueList(number: number): string {
+  return `/eos/get/cuelist/${number}`;
+}
+
+export function getCueCount(cueList: number): string {
+  return `/eos/get/cue/${cueList}/noparts/count`;
+}
+
+export function getCueIndex(cueList: number, index: number): string {
+  return `/eos/get/cue/${cueList}/noparts/index/${index}`;
+}
+
+export function getCue(cueList: number, cue: number | string): string {
+  return `/eos/get/cue/${cueList}/${targetNumber(cue, "cue")}/0`;
+}
+
+/** OSC Set — Dictionary /eos/set/* (Record itself stays CLI). */
+export function setGroupLabel(group: number): string {
+  return `/eos/set/group/${group}/label`;
+}
+
+/** Group channel membership; Thru ranges as "from > thru" per Dictionary. */
+export function setGroupChannels(group: number): string {
+  return `/eos/set/group/${group}/chans`;
+}
+
+export function setCueLabel(cueList: number, cue: number | string): string {
+  return `/eos/set/cue/${cueList}/${targetNumber(cue, "cue")}/label`;
+}
+
+export function setPresetLabel(preset: number): string {
+  return `/eos/set/preset/${preset}/label`;
+}
+
+export function setPaletteLabel(type: PaletteType, palette: number): string {
+  return `/eos/set/${type}/${palette}/label`;
+}
+
+export function getPresetCount(): string {
+  return "/eos/get/preset/count";
+}
+
+export function getPresetIndex(index: number): string {
+  return `/eos/get/preset/index/${index}`;
+}
+
+export function getPaletteCount(type: PaletteType): string {
+  return `/eos/get/${type}/count`;
+}
+
+export function getPaletteIndex(type: PaletteType, index: number): string {
+  return `/eos/get/${type}/index/${index}`;
+}

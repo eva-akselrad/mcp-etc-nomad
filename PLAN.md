@@ -463,10 +463,10 @@ Lighting desks control **real power to rig**. The MCP must not treat channels ca
 
 ### Phase 2 — Programming parity
 
-- [ ] `eos_command` helpers: record, update, copy, move, delete templates
-- [ ] Prompts: programmer + patch syntax
-- [ ] Resources: groups, cues (via sync)
-- [ ] Integrate or port `node-eos-console` cache patterns
+- [x] `eos_command` helpers: record, update, copy, move, delete templates
+- [x] Prompts: programmer + patch syntax
+- [x] Resources: groups, cues (via sync)
+- [x] Integrate or port `node-eos-console` cache patterns
 
 ### Phase 3 — Show & system admin
 

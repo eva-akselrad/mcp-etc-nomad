@@ -7,6 +7,7 @@ import { registerKeyMacroTools } from "./keys_macros.js";
 import { registerLevelTools } from "./levels.js";
 import { registerPaletteTools } from "./palettes.js";
 import { registerPlaybackTools } from "./playback.js";
+import { registerProgrammingTools } from "./programming.js";
 import { registerQueryTools } from "./queries.js";
 
 export function registerTools(server: McpServer, ctx: EosContext): void {
@@ -17,5 +18,6 @@ export function registerTools(server: McpServer, ctx: EosContext): void {
   registerPaletteTools(server, ctx);
   registerKeyMacroTools(server, ctx);
   registerBankTools(server, ctx);
+  registerProgrammingTools(server, ctx);
   registerQueryTools(server, ctx);
 }

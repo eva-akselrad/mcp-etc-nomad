@@ -21,6 +21,15 @@ export class MockOscPeer {
   private faderBankConfigured = new Set<string>();
   private cueListBankConfigured = new Set<number>();
   private dsBankConfigured = new Set<number>();
+  private readonly groups = [
+    { number: 1, uid: "grp-1", label: "Wash", channels: [1, 2, 3, 4, 5] },
+    { number: 2, uid: "grp-2", label: "Backlight", channels: [10, 11, 12] },
+  ];
+  private readonly cueLists = [{ number: 1, uid: "cl-1", label: "Main" }];
+  private readonly cues = [
+    { cueList: 1, number: "1", uid: "cue-1", label: "House Full" },
+    { cueList: 1, number: "5", uid: "cue-5", label: "Scene 5" },
+  ];
 
   constructor(private readonly options: MockOscPeerOptions) {
     this.consoleMode = options.consoleMode ?? 0;
@@ -77,6 +86,80 @@ export class MockOscPeer {
     if (dsCreate) {
       this.dsBankConfigured.add(Number(dsCreate[1]));
       await this.replyClient.send(`/eos/out/ds/${dsCreate[1]}/1`, "Channel 1");
+      return;
+    }
+
+    if (address === "/eos/get/group/count") {
+      await this.replyClient.send("/eos/out/get/group/count", this.groups.length);
+      return;
+    }
+
+    const groupIndex = address.match(/^\/eos\/get\/group\/index\/(\d+)$/);
+    if (groupIndex) {
+      const group = this.groups[Number(groupIndex[1])];
+      if (!group) return;
+      await this.replyClient.send(
+        `/eos/out/get/group/${group.number}/list/0`,
+        0,
+        group.uid,
+        group.label
+      );
+      await this.replyClient.send(
+        `/eos/out/get/group/${group.number}/channels/list/0`,
+        0,
+        group.uid,
+        ...group.channels
+      );
+      return;
+    }
+
+    if (address === "/eos/get/cuelist/count") {
+      await this.replyClient.send("/eos/out/get/cuelist/count", this.cueLists.length);
+      return;
+    }
+
+    const cueListIndex = address.match(/^\/eos\/get\/cuelist\/index\/(\d+)$/);
+    if (cueListIndex) {
+      const list = this.cueLists[Number(cueListIndex[1])];
+      if (!list) return;
+      await this.replyClient.send(
+        `/eos/out/get/cuelist/${list.number}/list/0`,
+        0,
+        list.uid,
+        list.label,
+        "default",
+        "fader"
+      );
+      await this.replyClient.send(`/eos/out/get/cuelist/${list.number}/linked/list/0`, 0, list.uid);
+      return;
+    }
+
+    const cueCount = address.match(/^\/eos\/get\/cue\/(\d+)\/noparts\/count$/);
+    if (cueCount) {
+      const list = Number(cueCount[1]);
+      const count = this.cues.filter((c) => c.cueList === list).length;
+      await this.replyClient.send(`/eos/out/get/cue/${list}/noparts/count`, count);
+      return;
+    }
+
+    const cueIndex = address.match(/^\/eos\/get\/cue\/(\d+)\/noparts\/index\/(\d+)$/);
+    if (cueIndex) {
+      const list = Number(cueIndex[1]);
+      const index = Number(cueIndex[2]);
+      const cue = this.cues.filter((c) => c.cueList === list)[index];
+      if (!cue) return;
+      await this.replyClient.send(
+        `/eos/out/get/cue/${list}/${cue.number}/0/list/0`,
+        0,
+        cue.uid,
+        cue.label,
+        3000,
+        0
+      );
+      return;
+    }
+
+    if (address.startsWith("/eos/subscribe=")) {
       return;
     }
   }

@@ -13,8 +13,8 @@ Control ETCnomad and Eos desks over **OSC** so an LLM can operate cues, levels, 
 | Phase | Status |
 |-------|--------|
 | 0 Foundation | Implemented |
-| **1 Playback parity** | **Implemented** |
-| 2 Programming parity | Not started |
+| 1 Playback parity | Implemented |
+| **2 Programming parity** | **Implemented** |
 | 3 Show & system admin | Not started |
 | 4 Hardening & distribution | Not started |
 
@@ -39,6 +39,25 @@ Live-write tools require `confirm=true` when `EOS_REQUIRE_CONFIRM=true` (default
 **Prompts:** `eos-operator`, `eos-live`
 
 OSC addresses follow the [ETC OSC Dictionary](https://www.etcconnect.com/WebDocs/Controls/EosFamilyOnlineHelp/en/Content/23_Show_Control/08_OSC/OSC_Dictionary.htm). Go is `go_0`; Stop/Back is `stop`. Create fader / cue-list / direct-select banks before paging or reading labels.
+
+## Phase 2 (programming)
+
+Programming writes use the same `confirm` / `allow_live` gates as playback. Destructive deletes also require `confirm_delete=true` when `EOS_REQUIRE_CONFIRM=true`.
+
+| Group | Tools |
+|-------|--------|
+| Record / update | `record_cue`, `update_cue`, `record_group`, `record_preset`, `record_palette` |
+| Copy / move / delete | `copy_target`, `move_target`, `delete_target` (+ `confirm_delete`) |
+| OSC set | `label_target`, `group_set_channels` (`/eos/set/...`; Thru as `>`) |
+| Patch | `patch_channel`, `patch_copy_to`, `patch_move`, `unpatch_channel` |
+| Sync / get | `sync_show_targets`, `get_groups`, `get_cuelists`, `get_cues`, `get_presets`, `get_palettes` |
+| Command line | `eos_command`, `eos_new_command` (typed tools use **newcmd**); no `/eos/record` verb |
+
+**Resources:** `eos://show/groups`, `eos://show/cuelists`, `eos://show/cues/{list}`, `eos://show/presets`, `eos://show/palettes/{type}`
+
+**Prompts:** `eos-programmer`, `eos-patch`
+
+Sync uses OSC `/eos/get/*` request/response (node-eos-console / EosSyncLib pattern): count → index → cache in listener state. Subscribe with `/eos/subscribe=1` on sync (default).
 
 ## Quick start
 
@@ -116,9 +135,9 @@ src/
 │   ├── keys.ts           # OSC Dictionary hardkey map + aliases
 │   ├── command.ts        # CLI terminators
 │   └── context.ts        # Shared context + live/confirm gates
-├── tools/                # MCP tools (Phase 0–1)
-├── resources/            # MCP resources
-└── prompts/              # eos-operator, eos-live
+├── tools/                # MCP tools (Phase 0–2)
+├── resources/            # MCP resources (playback + show)
+└── prompts/              # eos-operator, eos-live, eos-programmer, eos-patch
 ```
 
 ## License
