@@ -25,6 +25,9 @@ export const groupSelectionFields = {
 
 export const highlightStateSchema = z.enum(["on", "off", "toggle"]);
 
+/** Cue timing values accept seconds as number or Eos time string (e.g. "5", "1/2"). */
+export const timingValueSchema = z.union([z.number(), z.string()]);
+
 export const grandmasterLevelSchema = z
   .number()
   .min(0)
@@ -64,4 +67,45 @@ export function hasChannelSelection(input: {
     (input.channels?.length ?? 0) > 0 ||
     (input.ranges?.length ?? 0) > 0
   );
+}
+
+export function hasGroupSelection(input: {
+  group?: number;
+  groups?: number[];
+  from?: number;
+  thru?: number;
+}): boolean {
+  return (
+    input.group !== undefined ||
+    input.from !== undefined ||
+    (input.groups?.length ?? 0) > 0
+  );
+}
+
+/** Expand channel selection to a flat channel list (for park/unpark tracking). */
+export function expandChannelSelection(input: {
+  channel?: number;
+  channels?: number[];
+  ranges?: Array<{ from: number; thru: number }>;
+  from?: number;
+  thru?: number;
+}): number[] {
+  const result: number[] = [];
+  if (input.channel !== undefined) {
+    result.push(input.channel);
+  }
+  const ranges = [...(input.ranges ?? [])];
+  if (input.from !== undefined) {
+    ranges.push({ from: input.from, thru: input.thru ?? input.from });
+  }
+  for (const range of ranges) {
+    const end = Math.max(range.from, range.thru);
+    for (let ch = Math.min(range.from, range.thru); ch <= end; ch++) {
+      result.push(ch);
+    }
+  }
+  for (const ch of input.channels ?? []) {
+    result.push(ch);
+  }
+  return [...new Set(result)];
 }

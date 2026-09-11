@@ -109,6 +109,42 @@ describe("Lighting Expert priority pack", () => {
     assert.equal(client.sent.filter((m) => m.address === "/eos/chan").length, 2);
   });
 
+  it("channel_select minus deselects via _-% key", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "channel_select", { channel: 5, minus: [3] });
+    const addresses = client.sent.map((m) => m.address);
+    assert.ok(addresses.includes("/eos/key/_-%"));
+  });
+
+  it("unpark_channel accepts ranges selection", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "unpark_channel", {
+      ranges: [{ from: 10, thru: 12 }],
+      confirm: true,
+    });
+    assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 Thru 12 Unpark/);
+  });
+
+  it("home on group uses /eos/group/{n}/home", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "home", { group: 2, confirm: true });
+    assert.equal(client.sent.at(-1)?.address, "/eos/group/2/home");
+  });
+
+  it("set_cue_timing accepts numeric timing unions", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind" });
+
+    await invokeTool(server, "set_cue_timing", {
+      cue: 5,
+      upTime: 3,
+      confirm: true,
+    });
+    assert.match(String(client.sent.at(-1)?.args[0]), /Time 3/);
+  });
+
   it("channel_select ranges[] uses thru key", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 

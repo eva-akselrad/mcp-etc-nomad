@@ -435,27 +435,28 @@ export function buildSetCueTimingCommand(options: {
   cue: number | string;
   cueList?: number;
   part?: number;
-  upTime?: string;
-  upDelay?: string;
-  downTime?: string;
-  downDelay?: string;
-  focusTime?: string;
-  colorTime?: string;
-  beamTime?: string;
+  upTime?: number | string;
+  upDelay?: number | string;
+  downTime?: number | string;
+  downDelay?: number | string;
+  focusTime?: number | string;
+  colorTime?: number | string;
+  beamTime?: number | string;
   follow?: boolean;
-  hang?: string;
+  hang?: number | string;
   block?: boolean;
 }): string {
+  const fmt = (value: number | string) => String(value);
   const parts = [formatCueRef({ cueList: options.cueList, cue: options.cue, part: options.part })];
-  if (options.upTime) parts.push(`Time ${options.upTime}`);
-  if (options.upDelay) parts.push(`Delay ${options.upDelay}`);
-  if (options.downTime) parts.push(`Down ${options.downTime}`);
-  if (options.downDelay) parts.push(`Down Delay ${options.downDelay}`);
-  if (options.focusTime) parts.push(`Focus ${options.focusTime}`);
-  if (options.colorTime) parts.push(`Color ${options.colorTime}`);
-  if (options.beamTime) parts.push(`Beam ${options.beamTime}`);
+  if (options.upTime !== undefined) parts.push(`Time ${fmt(options.upTime)}`);
+  if (options.upDelay !== undefined) parts.push(`Delay ${fmt(options.upDelay)}`);
+  if (options.downTime !== undefined) parts.push(`Down ${fmt(options.downTime)}`);
+  if (options.downDelay !== undefined) parts.push(`Down Delay ${fmt(options.downDelay)}`);
+  if (options.focusTime !== undefined) parts.push(`Focus ${fmt(options.focusTime)}`);
+  if (options.colorTime !== undefined) parts.push(`Color ${fmt(options.colorTime)}`);
+  if (options.beamTime !== undefined) parts.push(`Beam ${fmt(options.beamTime)}`);
   if (options.follow) parts.push("Follow");
-  if (options.hang) parts.push(`Hang ${options.hang}`);
+  if (options.hang !== undefined) parts.push(`Hang ${fmt(options.hang)}`);
   if (options.block) parts.push("Block");
   return parts.join(" ");
 }
@@ -480,17 +481,53 @@ export function buildGoToCueCommand(options: {
 }
 
 export function buildParkCommand(options: { channel: number; thru?: number }): string {
-  if (options.thru !== undefined) {
+  if (options.thru !== undefined && options.thru !== options.channel) {
     return `Chan ${options.channel} Thru ${options.thru} Park`;
   }
   return `Chan ${options.channel} Park`;
 }
 
 export function buildUnparkCommand(options: { channel: number; thru?: number }): string {
-  if (options.thru !== undefined) {
+  if (options.thru !== undefined && options.thru !== options.channel) {
     return `Chan ${options.channel} Thru ${options.thru} Unpark`;
   }
   return `Chan ${options.channel} Unpark`;
+}
+
+/** Build park/unpark CLI from shared selection — single channel or one Thru range only. */
+export function buildChannelParkCli(
+  verb: "Park" | "Unpark",
+  input: {
+    channel?: number;
+    channels?: number[];
+    ranges?: Array<{ from: number; thru: number }>;
+    from?: number;
+    thru?: number;
+  }
+): string {
+  const ranges = [...(input.ranges ?? [])];
+  if (input.from !== undefined) {
+    ranges.push({ from: input.from, thru: input.thru ?? input.from });
+  }
+  if (ranges.length === 1) {
+    const range = ranges[0];
+    const builder = verb === "Park" ? buildParkCommand : buildUnparkCommand;
+    return builder({
+      channel: range.from,
+      thru: range.thru !== range.from ? range.thru : undefined,
+    });
+  }
+  if (input.channel !== undefined) {
+    const builder = verb === "Park" ? buildParkCommand : buildUnparkCommand;
+    return builder({ channel: input.channel, thru: input.thru });
+  }
+  if (input.channels?.length === 1) {
+    const builder = verb === "Park" ? buildParkCommand : buildUnparkCommand;
+    return builder({ channel: input.channels[0] });
+  }
+  throw new Error(
+    `CLI ${verb} needs a single channel or one Thru range; use method=key for multi-channel selection.`
+  );
 }
 
 /**

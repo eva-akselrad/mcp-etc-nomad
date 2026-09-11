@@ -14,17 +14,20 @@ import {
 import { buildCommand } from "../eos/command.js";
 import type { EosContext } from "../eos/context.js";
 import {
+  buildChannelParkCli,
   buildMakeManualCommand,
-  buildParkCommand,
   buildSetCueTimingCommand,
-  buildUnparkCommand,
 } from "../eos/programming.js";
 import { sendChannelSelection, sendGroupSelection } from "../eos/selection.js";
 import {
   channelSelectionFields,
+  expandChannelSelection,
   grandmasterLevelSchema,
+  groupSelectionFields,
   hasChannelSelection,
+  hasGroupSelection,
   highlightStateSchema,
+  timingValueSchema,
 } from "../specs/lighting-ops.js";
 import { gateLiveWrite, jsonResult, liveWriteFields, sendButton } from "./helpers.js";
 
@@ -94,59 +97,84 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
     "park_channel",
     {
       description:
-        "Park via CLI 'Chan N Park' (/eos/newcmd) or key /eos/key/park after channel select. Requires confirm + allow_live.",
+        "Park via CLI 'Chan N Park' (/eos/newcmd) or key /eos/key/park after channel select (channels/ranges/minus). Requires confirm + allow_live.",
       inputSchema: z.object({
-        channel: z.number().int().positive(),
-        thru: z.number().int().positive().optional(),
+        ...channelSelectionFields,
         method: z.enum(["cli", "key"]).optional().default("cli"),
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ channel, thru, method, confirm, allow_live }) => {
+    async ({ method, confirm, allow_live, ...selection }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
+
+      if (!hasChannelSelection(selection)) {
+        return jsonResult(
+          { ok: false, error: "Provide channel, channels, ranges, or from/thru for park." },
+          true
+        );
+      }
 
       const steps: string[] = [];
       const transport = method ?? "cli";
       if (transport === "key") {
-        steps.push(...(await sendChannelSelection(ctx, { channel, thru })));
+        steps.push(...(await sendChannelSelection(ctx, selection)));
         const address = keyPress("park");
         await sendButton(ctx, address);
         steps.push(address);
       } else {
-        steps.push(await sendCliStep(ctx, buildParkCommand({ channel, thru })));
+        try {
+          steps.push(await sendCliStep(ctx, buildChannelParkCli("Park", selection)));
+        } catch (error) {
+          return jsonResult(
+            { ok: false, error: error instanceof Error ? error.message : String(error) },
+            true
+          );
+        }
       }
 
-      const parked = thru !== undefined
-        ? Array.from({ length: thru - channel + 1 }, (_, i) => channel + i)
-        : [channel];
+      const parked = expandChannelSelection(selection);
       ctx.listener.getState().parkedChannels = [
         ...new Set([...ctx.listener.getState().parkedChannels, ...parked]),
       ];
-      return jsonResult({ ok: true, action: "park_channel", method, steps, parked });
+      return jsonResult({ ok: true, action: "park_channel", method: transport, steps, parked });
     }
   );
 
   server.registerTool(
     "unpark_channel",
     {
-      description: "Unpark via CLI 'Chan N Unpark' (/eos/newcmd). Requires confirm + allow_live.",
+      description:
+        "Unpark via CLI 'Chan N Unpark' (/eos/newcmd) with shared channels/ranges selection. Requires confirm + allow_live.",
       inputSchema: z.object({
-        channel: z.number().int().positive(),
-        thru: z.number().int().positive().optional(),
+        ...channelSelectionFields,
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ channel, thru, confirm, allow_live }) => {
+    async ({ confirm, allow_live, ...selection }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
-      const sent = await sendCliStep(ctx, buildUnparkCommand({ channel, thru }));
-      const unparked = thru !== undefined
-        ? Array.from({ length: thru - channel + 1 }, (_, i) => channel + i)
-        : [channel];
+      if (!hasChannelSelection(selection)) {
+        return jsonResult(
+          { ok: false, error: "Provide channel, channels, ranges, or from/thru for unpark." },
+          true
+        );
+      }
+
+      let sent: string;
+      try {
+        sent = await sendCliStep(ctx, buildChannelParkCli("Unpark", selection));
+      } catch (error) {
+        return jsonResult(
+          { ok: false, error: error instanceof Error ? error.message : String(error) },
+          true
+        );
+      }
+
+      const unparked = expandChannelSelection(selection);
       ctx.listener.getState().parkedChannels = ctx.listener
         .getState()
         .parkedChannels.filter((ch) => !unparked.includes(ch));
@@ -332,7 +360,7 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
       description:
         "Home selected targets via /eos/at/home, /eos/chan/{n}/home, /eos/group/{n}/home, fader home, or /eos/key/home. Selection required.",
       inputSchema: z.object({
-        group: z.number().int().positive().optional(),
+        ...groupSelectionFields,
         faderBank: z.number().int().min(0).optional(),
         fader: z.number().int().positive().optional(),
         use_key: z.boolean().optional(),
@@ -342,20 +370,39 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ group, faderBank, fader, use_key, edge, confirm, allow_live, ...selection }) => {
+    async ({ faderBank, fader, use_key, edge, confirm, allow_live, ...selection }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
-      const hasChannel = hasChannelSelection(selection);
+      const hasExplicitGroup =
+        selection.group !== undefined || (selection.groups?.length ?? 0) > 0;
+      const groupInput = hasExplicitGroup
+        ? {
+            group: selection.group,
+            groups: selection.groups,
+            from: selection.from,
+            thru: selection.thru,
+          }
+        : {};
+      const channelInput = {
+        channel: selection.channel,
+        channels: selection.channels,
+        ranges: selection.ranges,
+        from: hasExplicitGroup ? undefined : selection.from,
+        thru: hasExplicitGroup ? undefined : selection.thru,
+        minus: selection.minus,
+      };
+
+      const hasChannel = hasChannelSelection(channelInput);
       const hasFader = faderBank !== undefined && fader !== undefined;
-      const hasGroup = group !== undefined;
+      const hasGroup = hasGroupSelection(groupInput);
 
       if (!hasChannel && !hasGroup && !hasFader && !use_key) {
         return jsonResult(
           {
             ok: false,
             error:
-              "home requires selection: channels/ranges, group, faderBank+fader, or use_key=true.",
+              "home requires selection: channels/ranges, group/groups, faderBank+fader, or use_key=true.",
           },
           true
         );
@@ -363,24 +410,30 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
 
       const steps: string[] = [];
       if (hasGroup) {
-        steps.push(...(await sendGroupSelection(ctx, { group })));
+        steps.push(...(await sendGroupSelection(ctx, groupInput)));
       } else if (hasChannel) {
-        steps.push(...(await sendChannelSelection(ctx, selection)));
+        steps.push(...(await sendChannelSelection(ctx, channelInput)));
       }
 
       const singleChannel =
-        selection.channel !== undefined &&
-        !(selection.channels?.length) &&
-        !(selection.ranges?.length) &&
-        selection.from === undefined;
+        channelInput.channel !== undefined &&
+        !(channelInput.channels?.length) &&
+        !(channelInput.ranges?.length);
+
+      const singleGroup =
+        groupInput.group !== undefined &&
+        !(groupInput.groups?.length) &&
+        groupInput.from === undefined;
 
       let address: string;
       if (use_key) {
         address = keyPress("home");
+      } else if (hasGroup && singleGroup) {
+        address = groupHome(groupInput.group!);
       } else if (hasGroup) {
-        address = groupHome(group!);
+        address = atHome();
       } else if (singleChannel) {
-        address = channelHome(selection.channel!);
+        address = channelHome(channelInput.channel!);
       } else if (hasFader) {
         address = faderAction(faderBank!, fader!, "home");
       } else if (hasChannel) {
@@ -396,7 +449,8 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
         ok: true,
         action: "home",
         address,
-        group,
+        group: groupInput.group,
+        groups: groupInput.groups,
         faderBank,
         fader,
         steps,
@@ -432,15 +486,15 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
         cue: z.union([z.number(), z.string()]),
         cueList: z.number().int().positive().optional(),
         part: z.number().int().positive().optional(),
-        upTime: z.string().optional(),
-        upDelay: z.string().optional(),
-        downTime: z.string().optional(),
-        downDelay: z.string().optional(),
-        focusTime: z.string().optional(),
-        colorTime: z.string().optional(),
-        beamTime: z.string().optional(),
+        upTime: timingValueSchema.optional(),
+        upDelay: timingValueSchema.optional(),
+        downTime: timingValueSchema.optional(),
+        downDelay: timingValueSchema.optional(),
+        focusTime: timingValueSchema.optional(),
+        colorTime: timingValueSchema.optional(),
+        beamTime: timingValueSchema.optional(),
         follow: z.boolean().optional(),
-        hang: z.string().optional(),
+        hang: timingValueSchema.optional(),
         block: z.boolean().optional(),
         ...liveWriteFields,
       }),
