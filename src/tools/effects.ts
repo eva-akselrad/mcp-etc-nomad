@@ -74,6 +74,22 @@ async function ensureEffectDisplay(ctx: EosContext): Promise<{ ok: boolean; open
   return { ok: effectDisplayFocused(ctx), opened: true };
 }
 
+/**
+ * Creating/timing effects needs the Effect List display, which only the console's own user has
+ * (a separate OSC user, e.g. EOS_USER_ID=5, gets "Effect Does Not Exist"). Run those steps as the
+ * console user (-1 = no /eos/user prefix), then restore the configured user.
+ */
+async function asConsoleUser<T>(ctx: EosContext, fn: () => Promise<T>): Promise<T> {
+  const saved = ctx.config.userId;
+  if (saved < 0) return fn();
+  ctx.config.userId = -1;
+  try {
+    return await fn();
+  } finally {
+    ctx.config.userId = saved;
+  }
+}
+
 const effectNumber = z.number().int().positive().describe("Effect number");
 const groupField = { group: z.number().int().positive().optional().describe("Apply to a group instead of channels") };
 
@@ -146,6 +162,7 @@ export function registerEffectTools(server: McpServer, ctx: EosContext): void {
     async ({ effect, type, cycleTime, label, confirm, allow_live }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
+      return asConsoleUser(ctx, async () => {
       const display = await ensureEffectDisplay(ctx);
       if (!display.ok) {
         return jsonResult({
@@ -185,6 +202,7 @@ export function registerEffectTools(server: McpServer, ctx: EosContext): void {
       }
       const error = hasError(commandLine);
       return jsonResult({ ok: !error, action: "create_effect", effect, type, steps, commandLine, error }, Boolean(error));
+      });
     }
   );
 
@@ -203,6 +221,7 @@ export function registerEffectTools(server: McpServer, ctx: EosContext): void {
     async ({ effect, cycleTime, confirm, allow_live }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
+      return asConsoleUser(ctx, async () => {
       const display = await ensureEffectDisplay(ctx);
       if (!display.ok) {
         return jsonResult({
@@ -216,6 +235,7 @@ export function registerEffectTools(server: McpServer, ctx: EosContext): void {
       const commandLine = await sendLine(ctx, sent);
       const error = hasError(commandLine);
       return jsonResult({ ok: !error, action: "set_effect_timing", sent, commandLine, error }, Boolean(error));
+      });
     }
   );
 }

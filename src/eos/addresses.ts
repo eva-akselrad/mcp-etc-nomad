@@ -33,6 +33,12 @@ export function withUserPrefix(config: ServerConfig, address: string): string {
   if (address === "/eos/user") {
     return address;
   }
+  // Queries are not user-scoped: /eos/user/5/get/..., /eos/user/5/ping get no reply on
+  // ETCnomad 3.3.9. The client announces the OSC user with /eos/user, so these still
+  // report that user's state.
+  if (/^\/eos\/(get|ping|subscribe|set|reset|filter)(\/|$)/.test(address)) {
+    return address;
+  }
   if (address.startsWith("/eos/")) {
     return `${USER_PREFIX}/${config.userId}${address.slice(4)}`;
   }

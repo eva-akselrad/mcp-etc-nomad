@@ -75,6 +75,7 @@ async function runGoToCue(ctx: EosContext, args: GoToCueRunArgs) {
     if (time !== undefined) line += ` Time ${time}`;
     if (assert !== undefined && assert !== 0) steps.push("assert ignored on CLI path (use time)");
     steps.push(await sendCliStep(ctx, line));
+    const fired = await waitForCueFire(ctx);
 
     return jsonResult({
       ok: true,
@@ -82,6 +83,8 @@ async function runGoToCue(ctx: EosContext, args: GoToCueRunArgs) {
       method: "cli",
       path: "/eos/newcmd",
       steps,
+      fired: fired ?? null,
+      firedNote: fired ? undefined : "No cue-fire event seen within 1.5 s (already active, Out/0, or OSC TX off).",
       cueList,
       cue,
       out,
@@ -113,6 +116,20 @@ async function runGoToCue(ctx: EosContext, args: GoToCueRunArgs) {
     time,
     note: "CLI method preferred; key path does not enter cue digits — select cue first if needed.",
   });
+}
+
+/** Wait briefly for Eos's /eos/out/event/cue/<list>/<cue>/fire to confirm what actually ran. */
+async function waitForCueFire(
+  ctx: EosContext,
+  timeoutMs = 1500
+): Promise<{ cueList: number; cue: string } | undefined> {
+  try {
+    const msg = await ctx.listener.waitFor(/^\/eos\/out\/event\/cue\/\d+\/[\d.]+\/fire$/, timeoutMs);
+    const parts = msg.address.split("/");
+    return { cueList: Number(parts[5]), cue: parts[6] };
+  } catch {
+    return undefined;
+  }
 }
 
 export function registerPlaybackTools(server: McpServer, ctx: EosContext): void {
@@ -205,7 +222,9 @@ export function registerPlaybackTools(server: McpServer, ctx: EosContext): void 
 
       const address = "/eos/key/go_0";
       await sendButton(ctx, address);
-      return jsonResult({ ok: true, action: "cue_go", address });
+      const fired = await waitForCueFire(ctx);
+      // [Go] runs the master playback, which may not be the list you expect.
+      return jsonResult({ ok: true, action: "cue_go", address, fired: fired ?? null });
     }
   );
 

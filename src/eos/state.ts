@@ -57,6 +57,17 @@ export interface ShowFileInfo {
   lastEventPath?: string;
 }
 
+export interface ActiveWheelState {
+  index: number;
+  label: string;
+  name: string;
+  /** 0=Null, 1=Intensity, 2=Focus, 3=Color, 4=Image, 5=Form, 6=Shutter */
+  category?: number;
+  value?: number;
+  raw: unknown[];
+  updatedAt: string;
+}
+
 export interface EosState {
   connected: boolean;
   lastMessageAt?: string;
@@ -71,6 +82,10 @@ export interface EosState {
   activeCue: ActiveCueState;
   activeChannels?: string;
   activeChannelLevels: ActiveChannelLevel[];
+  /** /eos/out/active/wheel/<n> — parameters of the first selected channel (name, category, value). */
+  activeWheels: Record<string, ActiveWheelState>;
+  /** Last /eos/out/event/cue/<list>/<cue>/fire|stop. */
+  lastCueEvent?: { cueList: number; cue: string; event: string; at: string };
   pendingCue: PendingCueState;
   pendingCues: Record<string, unknown>;
   pendingByCueList: Record<string, PendingCueState[]>;
@@ -99,6 +114,7 @@ export function createInitialState(): EosState {
     consoleGet: {},
     activeCue: {},
     activeChannelLevels: [],
+    activeWheels: {},
     pendingCue: { raw: {} },
     pendingCues: {},
     pendingByCueList: {},

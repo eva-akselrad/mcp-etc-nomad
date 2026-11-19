@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { oscReset } from "../eos/addresses.js";
 import type { EosContext } from "../eos/context.js";
+import { sendChannelSelection } from "../eos/selection.js";
 import { jsonResult } from "./helpers.js";
 
 export function registerQueryTools(server: McpServer, ctx: EosContext): void {
@@ -124,6 +125,104 @@ export function registerQueryTools(server: McpServer, ctx: EosContext): void {
       const pattern = useRegex ? new RegExp(address) : address;
       const message = await ctx.listener.waitFor(pattern, timeoutMs ?? 3000);
       return jsonResult(message);
+    }
+  );
+  const CATEGORY = ["Null", "Intensity", "Focus", "Color", "Image", "Form", "Shutter"];
+  const wheelsSince = (sinceMs: number) =>
+    Object.values(ctx.listener.getState().activeWheels ?? {})
+      .filter((w) => Date.parse(w.updatedAt) >= sinceMs)
+      .sort((a, b) => a.index - b.index)
+      .map((w) => ({
+        name: w.name,
+        value: w.value,
+        category: w.category !== undefined ? CATEGORY[w.category] ?? w.category : undefined,
+        label: w.label,
+      }));
+
+  server.registerTool(
+    "get_channel_parameters",
+    {
+      description:
+        "Read back a channel's current parameter values (intensity, colour, pan/tilt, beam...) from " +
+        "/eos/out/active/wheel/*. Selects the channel (does not change levels), then waits for Eos to report. " +
+        "Values are for the first selected channel.",
+      inputSchema: z.object({
+        channel: z.number().int().positive(),
+        timeoutMs: z.number().int().positive().max(10000).optional(),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ channel, timeoutMs }) => {
+      const t0 = Date.now();
+      await sendChannelSelection(ctx, { channel });
+      try {
+        await ctx.listener.waitFor(/^\/eos\/out\/active\/wheel\/\d+$/, timeoutMs ?? 3000);
+      } catch {
+        // fall through: report whatever arrived
+      }
+      await new Promise((r) => setTimeout(r, 500));
+      const parameters = wheelsSince(t0);
+      return jsonResult(
+        {
+          ok: parameters.length > 0,
+          channel,
+          activeChannels: ctx.listener.getState().activeChannels,
+          parameters,
+          note: parameters.length
+            ? undefined
+            : "No wheel data arrived. Check OSC TX is on; on TCP 3032 updates arrive about once a second.",
+        },
+        parameters.length === 0
+      );
+    }
+  );
+
+  server.registerTool(
+    "get_active_parameters",
+    {
+      description: "Return the last parameter values Eos reported for the current selection (no selection change).",
+      inputSchema: z.object({}),
+      annotations: { readOnlyHint: true },
+    },
+    async () =>
+      jsonResult({ activeChannels: ctx.listener.getState().activeChannels, parameters: wheelsSince(0) })
+  );
+  server.registerTool(
+    "eos_ping",
+    {
+      description:
+        "Check the console is answering: sends /eos/ping and waits for /eos/out/ping. " +
+        "No reply usually means OSC RX/TX is off in the open show, or the wrong host/port.",
+      inputSchema: z.object({ timeoutMs: z.number().int().positive().max(10000).optional() }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ timeoutMs }) => {
+      const token = `mcp-${Date.now()}`;
+      const t0 = Date.now();
+      await ctx.client.send("/eos/ping", token);
+      try {
+        const reply = await ctx.listener.waitFor(/^\/eos\/out\/ping/, timeoutMs ?? 2000);
+        return jsonResult({
+          ok: true,
+          roundTripMs: Date.now() - t0,
+          reply: reply.args,
+          host: ctx.config.host,
+          protocol: ctx.config.protocol,
+        });
+      } catch {
+        return jsonResult(
+          {
+            ok: false,
+            error: "No /eos/out/ping reply.",
+            checks: [
+              "Is Nomad / the console running with a show open?",
+              "Setup > System Settings > Show Control > OSC: OSC RX, OSC TX and String RX on (stored per show file).",
+              `EOS_HOST=${ctx.config.host}, protocol ${ctx.config.protocol} — match the console.`,
+            ],
+          },
+          true
+        );
+      }
     }
   );
 }

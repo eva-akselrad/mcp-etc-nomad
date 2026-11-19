@@ -198,6 +198,38 @@ export class EosListener extends EventEmitter {
       }
     }
 
+    const cueEvent = address.match(/^\/eos\/out\/event\/cue\/(\d+)\/([\d.]+)\/(\w+)$/);
+    if (cueEvent) {
+      this.state.lastCueEvent = {
+        cueList: Number(cueEvent[1]),
+        cue: cueEvent[2],
+        event: cueEvent[3],
+        at: new Date().toISOString(),
+      };
+    }
+
+    const wheelMatch = address.match(/^\/eos\/out\/active\/wheel\/(\d+)$/);
+    if (wheelMatch) {
+      const index = Number(wheelMatch[1]);
+      const label = String(args[0] ?? "");
+      const name = label.replace(/\s*\[.*$/, "").trim();
+      const numbers = args.slice(1).filter((a): a is number => typeof a === "number");
+      if (!this.state.activeWheels) this.state.activeWheels = {};
+      if (name) {
+        this.state.activeWheels[String(index)] = {
+          index,
+          label,
+          name,
+          category: numbers.length > 1 ? numbers[0] : undefined,
+          value: numbers.length > 0 ? numbers[numbers.length - 1] : undefined,
+          raw: args,
+          updatedAt: new Date().toISOString(),
+        };
+      } else {
+        delete this.state.activeWheels[String(index)];
+      }
+    }
+
     if (address === "/eos/out/active/chan") {
       const channel = Number(args[0]);
       const text = String(args[1] ?? args[0] ?? "");
