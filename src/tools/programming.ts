@@ -467,7 +467,7 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
     "label_target",
     {
       description:
-        "Set target label via OSC /eos/set/.../label (Dictionary). Record itself stays CLI.",
+        "Set a label via OSC /eos/set/<target>/<n>/label: groups, cues, presets, palettes, macros, subs, effects, curves, snapshots, pixel maps, magic sheets, patch channels (number = channel), cue lists.",
       inputSchema: z.object({
         target: z.enum([
           "group",
@@ -484,6 +484,8 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
           "snap",
           "pixmap",
           "ms",
+          "patch",
+          "cuelist",
         ]),
         number: z.union([z.number(), z.string()]),
         label: z.string(),
@@ -497,6 +499,10 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         path = setGroupLabel(n);
       } else if (args.target === "cue" && args.cueList !== undefined) {
         path = setCueLabel(args.cueList, args.number);
+      } else if (["macro", "sub", "effect", "curve", "snap", "pixmap", "ms", "patch", "cuelist"].includes(args.target)) {
+        // Direct OSC label set (Eos v3.2 manual, OSC Set): /eos/set/<target>/<n>/label.
+        const seg = args.target === "effect" ? "fx" : args.target;
+        path = `/eos/set/${seg}/${n}/label`;
       } else if (args.target === "preset") {
         path = setPresetLabel(n);
       } else if (["ip", "fp", "cp", "bp"].includes(args.target)) {
@@ -516,6 +522,39 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
 
       await ctx.client.send(path, args.label);
       return jsonResult({ ok: true, action: "label_target", path, label: args.label });
+    }
+  );
+
+  server.registerTool(
+    "patch_set_info",
+    {
+      description:
+        "Set a patched channel's label, notes and/or gel via OSC (/eos/set/patch/<ch>/label|notes|gel). " +
+        "Text only — does not change addresses or fixture types.",
+      inputSchema: z.object({
+        channel: z.number().int().positive(),
+        label: z.string().optional(),
+        notes: z.string().optional(),
+        gel: z.string().optional(),
+        ...liveWriteFields,
+      }),
+      annotations: { destructiveHint: true },
+    },
+    async ({ channel, label, notes, gel, confirm, allow_live }) => {
+      // Text metadata only (no output change), so no Live gate — but still honour EOS_REQUIRE_CONFIRM.
+      void allow_live;
+      if (ctx.config.requireConfirm && !confirm) {
+        return jsonResult({ ok: false, error: "Pass confirm=true to execute this action (EOS_REQUIRE_CONFIRM=true)." }, true);
+      }
+      const sent: string[] = [];
+      for (const [field, value] of [["label", label], ["notes", notes], ["gel", gel]] as const) {
+        if (value === undefined) continue;
+        const path = `/eos/set/patch/${channel}/${field}`;
+        await ctx.client.send(path, value);
+        sent.push(`${path} ${JSON.stringify(value)}`);
+      }
+      if (!sent.length) return jsonResult({ ok: false, error: "Provide label, notes or gel." }, true);
+      return jsonResult({ ok: true, action: "patch_set_info", channel, sent });
     }
   );
 

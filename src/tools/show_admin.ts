@@ -377,6 +377,7 @@ export function registerShowAdminTools(server: McpServer, ctx: EosContext): void
         ok: true,
         path,
         eosVersion: ctx.config.eosVersion,
+        showName: ctx.listener.getState().showName,
         lastShowEvent: ctx.listener.getState().showFile,
       });
     }

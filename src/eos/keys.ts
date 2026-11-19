@@ -1,3 +1,4 @@
+import { EOS_MANUAL_KEY_NAMES } from "./osc-key-dictionary.js";
 /**
  * Operator-focused OSC hardkey map from the ETC Eos OSC Dictionary
  * (Eos Family v3.3.6 User Manual — OSC Eos Keys).
@@ -264,4 +265,25 @@ export function oscKeyCatalog(): {
       "Hold Shift with key_press edge=down, then the second key, then edge=up.",
     ],
   };
+}
+
+
+/** True when the name is in the Eos manual's key table or this server's own key table. */
+export function isKnownOscKey(oscName: string): boolean {
+  const lower = oscName.toLowerCase();
+  if (EOS_MANUAL_KEY_NAMES.has(lower) || KEY_BY_OSC.has(lower)) return true;
+  // digits, and CIA softkeys beyond the manual's listed range
+  return /^\d$/.test(lower) || /^softkey_\d+$/.test(lower) || /^cia_softkey\d+$/.test(lower);
+}
+
+/** Up to five known key names that contain or start like the given name. */
+export function suggestOscKeys(oscName: string): string[] {
+  const lower = oscName.toLowerCase();
+  const stem = lower.replace(/[_-]/g, "");
+  const all = [...EOS_MANUAL_KEY_NAMES, ...KEY_BY_OSC.keys()];
+  const hits = all.filter((k) => {
+    const kStem = k.replace(/[_-]/g, "");
+    return kStem.length >= 3 && (kStem.includes(stem) || stem.includes(kStem));
+  });
+  return [...new Set(hits)].sort((a, b) => a.length - b.length).slice(0, 5);
 }

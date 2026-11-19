@@ -167,6 +167,10 @@ export class EosListener extends EventEmitter {
       this.state.consoleGet = { ...this.state.consoleGet, session: args };
     }
 
+    if (address === "/eos/out/show/name") {
+      this.state.showName = args[0] !== undefined ? String(args[0]) : undefined;
+    }
+
     const showEventMatch = address.match(/^\/eos\/out\/event\/show\/(\w+)$/);
     if (showEventMatch) {
       const event = showEventMatch[1];
@@ -176,7 +180,13 @@ export class EosListener extends EventEmitter {
         lastEventPath: args[0] !== undefined ? String(args[0]) : undefined,
         path: args[0] !== undefined ? String(args[0]) : this.state.showFile?.path,
       };
-      if (args[0] !== undefined) {
+      if (event === "cleared") {
+        // New/cleared show: no file path until it is saved.
+        this.state.showPath = undefined;
+        this.state.showName = undefined;
+      } else if (args[0] !== undefined && event !== "loaded") {
+        // "loaded" also fires for a merge source, so only trust saved paths here;
+        // get_show_path queries the console for the open file.
         this.state.showPath = String(args[0]);
       }
     }

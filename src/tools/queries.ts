@@ -20,6 +20,8 @@ export function registerQueryTools(server: McpServer, ctx: EosContext): void {
         consoleMode: state.consoleMode,
         oscUserId: state.oscUserId,
         commandLine: state.commandLine,
+        showName: state.showName,
+        showPath: state.showPath,
         activeChannels: state.activeChannels,
         activeChannelLevels: state.activeChannelLevels,
         lastMessageAt: state.lastMessageAt,

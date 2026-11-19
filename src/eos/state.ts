@@ -88,6 +88,8 @@ export interface EosState {
   oscUserId?: number;
   commandLine?: string;
   showPath?: string;
+  /** Show title from /eos/out/show/name. */
+  showName?: string;
   session?: SessionInfo;
   showFile?: ShowFileInfo;
   consoleGet?: ConsoleGetCache;
