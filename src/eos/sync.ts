@@ -17,6 +17,7 @@ import {
 } from "./addresses.js";
 import type { EosClient } from "./client.js";
 import type { EosListener } from "./listener.js";
+import type { ExtraTargetState, ExtraTargetType } from "./state.js";
 import type { CueListState, GroupState, PatchChannelState, PresetState } from "./show-types.js";
 import { cueListKey, groupKey, parseBaseRecordTarget, patchKey, presetKey } from "./show-types.js";
 
@@ -31,6 +32,8 @@ export interface SyncOptions {
   presets?: boolean;
   palettes?: boolean | PaletteType[];
   patch?: boolean;
+  /** Macros, subs, effects (fx), snapshots, magic sheets — off by default. */
+  extras?: ExtraTargetType[];
   subscribe?: boolean;
   timeoutMs?: number;
 }
@@ -42,6 +45,7 @@ export interface SyncResult {
   presets: number;
   palettes: Record<string, number>;
   patch: number;
+  extras?: Record<string, number>;
   subscribed: boolean;
   lastSyncedAt: string;
 }
@@ -143,6 +147,12 @@ export async function syncShowTargets(
     patchCount = await syncPatchFromConsole(client, listener, timeoutMs);
   }
 
+  const extraCounts: Record<string, number> = {};
+  for (const type of options.extras ?? []) {
+    extraCounts[type] = await syncExtraTargets(client, listener, type, timeoutMs);
+    await sleep(INDEX_STEP_MS);
+  }
+
   const now = new Date().toISOString();
   listener.getState().lastSyncedAt = now;
 
@@ -153,6 +163,7 @@ export async function syncShowTargets(
     presets: presetCount,
     palettes: paletteCounts,
     patch: patchCount,
+    extras: Object.keys(extraCounts).length ? extraCounts : undefined,
     subscribed: subscribe,
     lastSyncedAt: now,
   };
@@ -398,4 +409,61 @@ async function syncPatchFromConsole(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+
+/** Field layouts from the Eos v3.2 manual, "Detailed Information Packet Contents". */
+function extraDetails(type: ExtraTargetType, args: unknown[]): Record<string, unknown> {
+  const a = (i: number) => args[i];
+  switch (type) {
+    case "macro":
+      return { mode: a(3) };
+    case "sub":
+      return {
+        mode: a(3), faderMode: a(4), htp: a(5), exclusive: a(6), background: a(7),
+        restore: a(8), priority: a(9), upTime: a(10), dwellTime: a(11), downTime: a(12),
+      };
+    case "fx":
+      return { effectType: a(3), entry: a(4), exit: a(5), duration: a(6), scale: a(7) };
+    default:
+      return {};
+  }
+}
+
+async function syncExtraTargets(
+  client: EosClient,
+  listener: EosListener,
+  type: ExtraTargetType,
+  timeoutMs: number
+): Promise<number> {
+  await client.send(`/eos/get/${type}/count`);
+  const countMsg = await listener.waitFor(new RegExp(`^/eos/out/get/${type}/count$`), timeoutMs);
+  const count = Number(countMsg.args[0] ?? 0);
+  const items: Record<string, ExtraTargetState> = {};
+
+  for (let index = 0; index < count; index++) {
+    await client.send(`/eos/get/${type}/index`, index);
+    const msg = await listener.waitFor(outGetList0(`${type}/[\\d.]+`), timeoutMs);
+    const number = Number(msg.address.split("/")[5]);
+    const base = parseBaseRecordTarget(msg.args);
+    const details = extraDetails(type, msg.args);
+    if (type === "macro") {
+      try {
+        const textMsg = await listener.waitFor(outGetList0(`macro/${number}/text`), 1500);
+        details.text = textMsg.args
+          .slice(2)
+          .map((x) => String(x))
+          .join("")
+          .replace(/[\r\n]+/g, " ")
+          .trim();
+      } catch {
+        details.text = undefined;
+      }
+    }
+    items[String(number)] = { type, number, uid: base.uid, label: base.label, details, raw: msg.args };
+    await sleep(INDEX_STEP_MS);
+  }
+
+  listener.getState().extraTargets[type] = items;
+  return count;
 }

@@ -68,6 +68,18 @@ export interface ActiveWheelState {
   updatedAt: string;
 }
 
+export type ExtraTargetType = "macro" | "sub" | "fx" | "snap" | "ms";
+
+export interface ExtraTargetState {
+  type: ExtraTargetType;
+  number: number;
+  uid?: string;
+  label?: string;
+  /** Type-specific fields from the Eos OSC get reply (e.g. macro text, sub mode, effect type). */
+  details: Record<string, unknown>;
+  raw: unknown[];
+}
+
 export interface EosState {
   connected: boolean;
   lastMessageAt?: string;
@@ -102,6 +114,8 @@ export interface EosState {
   cues: Record<string, CueState>;
   presets: Record<string, PresetState>;
   palettes: Record<string, PaletteState>;
+  /** Macros, subs, effects, snapshots, magic sheets keyed by type then number. */
+  extraTargets: Partial<Record<ExtraTargetType, Record<string, ExtraTargetState>>>;
   syncStatus: SyncStatus;
 }
 
@@ -131,6 +145,7 @@ export function createInitialState(): EosState {
     cues: {},
     presets: {},
     palettes: {},
+    extraTargets: {},
     syncStatus: { cuesAt: {}, palettesAt: {} },
   };
 }

@@ -693,14 +693,19 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         presets: z.boolean().optional(),
         palettes: z.union([z.boolean(), z.array(paletteTypeSchema)]).optional(),
         patch: z.boolean().optional(),
+        extras: z
+          .array(z.enum(["macro", "sub", "fx", "snap", "ms"]))
+          .optional()
+          .describe("Also read macros (with text), subs, effects (fx), snapshots, magic sheets"),
         subscribe: z.boolean().optional(),
         timeoutMs: z.number().int().positive().max(60000).optional(),
       }),
       annotations: { readOnlyHint: true },
     },
-    async ({ groups, cueLists, cues, allCues, presets, palettes, patch, subscribe, timeoutMs }) => {
+    async ({ groups, cueLists, cues, allCues, presets, palettes, patch, extras, subscribe, timeoutMs }) => {
       const result = await syncShowTargets(ctx.client, ctx.listener, {
         allCues,
+        extras,
         groups,
         cueLists,
         cues,
@@ -872,6 +877,26 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         nextOffset: offset + page.length < filtered.length ? offset + page.length : undefined,
         patch: page,
         lastSyncedAt,
+      });
+    }
+  );
+
+  server.registerTool(
+    "get_show_targets",
+    {
+      description:
+        "Cached macros (with command text), submasters, effects (type, duration...), snapshots and magic sheets. " +
+        "Run sync_show_targets with extras first.",
+      inputSchema: z.object({ type: z.enum(["macro", "sub", "fx", "snap", "ms"]) }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ type }) => {
+      const items = Object.values(ctx.listener.getState().extraTargets[type] ?? {}).sort((a, b) => a.number - b.number);
+      return jsonResult({
+        type,
+        count: items.length,
+        items: items.map(({ raw: _raw, ...rest }) => rest),
+        hint: items.length ? undefined : `Run sync_show_targets with extras: ["${type}"] first.`,
       });
     }
   );
