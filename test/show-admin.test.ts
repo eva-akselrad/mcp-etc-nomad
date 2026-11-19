@@ -55,12 +55,12 @@ describe("show-admin workflow builders (Eos OSC domain)", () => {
     assert.equal(merge.needsManual, true);
     assert.match(merge.browserPath ?? "", /Merge/);
     assert.equal(merge.keys, undefined);
-    assert.deepEqual(merge.steps, ["Merge"]);
+    assert.deepEqual(merge.steps, []);
   });
 
-  it("load/merge support confirm_path second Enter", () => {
-    assert.deepEqual(buildLoadShowWorkflow({ confirmPath: true }).steps, [""]);
-    assert.deepEqual(buildMergeShowWorkflow({ confirmPath: true }).steps, ["Merge", ""]);
+  it("load/merge never send blind CLI steps (user picks the file in the Browser)", () => {
+    assert.deepEqual(buildLoadShowWorkflow({ confirmPath: true }).steps, []);
+    assert.deepEqual(buildMergeShowWorkflow({ confirmPath: true }).steps, []);
   });
 
   it("export returns manual browser instructions, not CLI paths or invented keys", () => {
@@ -254,7 +254,7 @@ describe("show_admin tools (TX via recording client)", () => {
     assert.equal(client.sent.length, 0);
   });
 
-  it("show_merge returns needsManual and sends Merge CLI when allowed", async () => {
+  it("show_merge returns needsManual and sends no CLI text when allowed", async () => {
     const { server, client } = createHarness({
       consoleMode: "blind",
       config: { requireConfirm: false },
@@ -269,12 +269,13 @@ describe("show_admin tools (TX via recording client)", () => {
     assert.equal(body.needsManual, true);
     assert.match(body.browserPath, /Merge/);
     const cmds = client.sent.filter((m) => m.address === "/eos/newcmd").map((m) => String(m.args[0]));
-    assert.ok(cmds.some((c) => /Merge Enter/.test(c)));
+    // "Merge" is not an Eos command-line word; the user runs Browser > File > Merge.
+    assert.equal(cmds.length, 0);
     const keys = client.sent.filter((m) => m.address.startsWith("/eos/key/"));
     assert.equal(keys.length, 0);
   });
 
-  it("show_merge sends confirm Enter when confirm_path is set", async () => {
+  it("show_merge sends no command-line text when confirm_path is set", async () => {
     const { server, client } = createHarness({
       consoleMode: "blind",
       config: { requireConfirm: false },
@@ -284,8 +285,8 @@ describe("show_admin tools (TX via recording client)", () => {
       confirm_path: true,
     });
     const cmds = client.sent.filter((m) => m.address === "/eos/newcmd").map((m) => String(m.args[0]));
-    assert.ok(cmds.some((c) => /Merge Enter/.test(c)));
-    assert.ok(cmds.some((c) => /Enter$/.test(c) && !/Merge/.test(c)));
+    // A blind "Merge Enter" / "Enter" could run leftover command-line text on the desk.
+    assert.equal(cmds.length, 0);
   });
 
   it("show_merge sends unverified keys only when press_unverified_browser_keys=true", async () => {

@@ -98,6 +98,14 @@ async function runShowWorkflow(
 ): Promise<ReturnType<typeof jsonResult>> {
   const { steps, notes, keys, browserPath } = workflow;
   const sent: string[] = [];
+  let previousShowPath: string | undefined;
+  try {
+    await ctx.client.send("/eos/get/show/path");
+    const before = await ctx.listener.waitFor(/^\/eos\/out\/get\/show\/path$/, 2000);
+    previousShowPath = before.args[0] !== undefined ? String(before.args[0]) : undefined;
+  } catch {
+    previousShowPath = ctx.listener.getState().showPath;
+  }
   const needsManual = options.needsManual ?? workflow.needsManual ?? false;
 
   if (keys?.length) {
@@ -148,18 +156,23 @@ async function runShowWorkflow(
     }
   }
 
-  let echoedPath: string | undefined;
-  if (showEvent?.args[0] !== undefined) {
-    echoedPath = String(showEvent.args[0]);
-  } else {
-    try {
-      await ctx.client.send("/eos/get/show/path");
-      const pathMsg = await ctx.listener.waitFor(/^\/eos\/out\/get\/show\/path$/, 2000);
-      echoedPath = pathMsg.args[0] !== undefined ? String(pathMsg.args[0]) : undefined;
-    } catch {
-      echoedPath = ctx.listener.getState().showPath;
-    }
+  // Always ask the console for the open show. Eos also emits /eos/out/event/show/loaded
+  // with the *source* file's path during a merge, so an event path is not the open show.
+  let currentShowPath: string | undefined;
+  try {
+    await ctx.client.send("/eos/get/show/path");
+    const pathMsg = await ctx.listener.waitFor(/^\/eos\/out\/get\/show\/path$/, 2000);
+    currentShowPath = pathMsg.args[0] !== undefined ? String(pathMsg.args[0]) : undefined;
+  } catch {
+    currentShowPath = undefined;
   }
+  if (currentShowPath !== undefined) {
+    ctx.listener.getState().showPath = currentShowPath;
+  }
+  const changed =
+    previousShowPath !== undefined && currentShowPath !== undefined && previousShowPath !== currentShowPath;
+  const isSave = (options.action ?? "").includes("save");
+  const echoedPath = currentShowPath;
 
   return jsonResult({
     ok: true,
@@ -167,9 +180,18 @@ async function runShowWorkflow(
     needsManual,
     browserPath: needsManual ? browserPath : undefined,
     sent,
-    echoedPath,
-    savedPath: echoedPath,
-    pathEchoed: echoedPath !== undefined,
+    previousShowPath,
+    currentShowPath,
+    showChanged: changed,
+    // savedPath only when this was a save and the console reported a saved event.
+    savedPath:
+      isSave && showEvent?.address.endsWith("/saved")
+        ? String(showEvent.args[0] ?? echoedPath ?? "")
+        : undefined,
+    pathEchoed: echoedPath !== undefined || (isSave && showEvent?.args[0] !== undefined),
+    status: needsManual
+      ? "Waiting for the user: finish the file pick in the Browser, then re-check get_show_path / sync_show_targets."
+      : undefined,
     notes: [
       ...(notes ?? []),
       "No OSC Save/Load verbs — Browser/key_press/CLI only. Never invent file paths.",
