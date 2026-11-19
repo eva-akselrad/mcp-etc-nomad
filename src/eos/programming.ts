@@ -163,7 +163,7 @@ export function buildRecordCommand(options: {
   if (options.target === "cue") {
     // cue labels are applied separately via /eos/set/cue/{list}/{cue}/label
   } else if (options.label && options.number !== undefined) {
-    parts.push(`Label ${formatTarget(options.target, options.number)} ${JSON.stringify(options.label)}`);
+    parts.push(`Label ${options.label.trim()}`);
   }
 
   return parts.join(" ");
@@ -374,14 +374,14 @@ export function buildLabelCommand(options: {
   cueList?: number;
   part?: number;
 }): string {
-  if (options.target === "cue") {
-    return `Label ${formatCueRef({
-      cueList: options.cueList,
-      cue: options.number,
-      part: options.part,
-    })} ${JSON.stringify(options.label)}`;
-  }
-  return `Label ${formatTarget(options.target, options.number)} ${JSON.stringify(options.label)}`;
+  // Eos: "Effect 950 Label MCP Test Linear" — target first, then Label, then the bare text.
+  // Quotes are kept literally in the label, so none are added.
+  const text = options.label.replace(/[\r\n]+/g, " ").trim();
+  const target =
+    options.target === "cue"
+      ? formatCueRef({ cueList: options.cueList, cue: options.number, part: options.part })
+      : formatTarget(options.target, options.number);
+  return `${target} Label ${text}`;
 }
 
 export function buildGroupFromChannelsCommand(options: {

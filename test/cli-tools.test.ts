@@ -59,7 +59,7 @@ describe("programming CLI builders — extended coverage", () => {
     assert.equal(buildUnpatchCommand({ channel: 50 }), "50 Address 0 Enter Enter");
     assert.equal(
       buildLabelCommand({ target: "group", number: 1, label: "Warm Wash" }),
-      'Label Group 1 "Warm Wash"'
+      "Group 1 Label Warm Wash"
     );
     assert.equal(
       buildGroupFromChannelsCommand({ group: 1, channelFrom: 1, channelThru: 3 }),
