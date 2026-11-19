@@ -121,7 +121,7 @@ describe("tool TX paths via recording client", () => {
     });
     assert.equal(isToolError(fire), false);
     const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/assert"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && /Time 0/.test(String(m.args[0]))));
     assert.ok(addresses.some((a) => a === "/eos/newcmd"));
     assert.ok(!addresses.some((a) => a.match(/\/eos\/cue\/.*\/fire$/)));
     const body = parseToolJson<{ canonicalAction: string; time: number }>(fire);
@@ -202,7 +202,7 @@ describe("tool TX paths via recording client", () => {
     });
     assert.equal(isToolError(ok), false);
     const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/assert"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && /Time 0/.test(String(m.args[0]))));
     assert.ok(addresses.some((a) => a === "/eos/newcmd"));
     assert.ok(!addresses.some((a) => a.match(/\/eos\/cue\/.*\/fire$/)));
   });
@@ -224,7 +224,7 @@ describe("tool TX paths via recording client", () => {
     }
   });
 
-  it("channel_set_dmx uses lowercase /eos/chan/{n}/dmx", async () => {
+  it("channel_set_dmx converts DMX to percent on the CLI", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     const result = await invokeTool(server, "channel_set_dmx", {
@@ -233,8 +233,9 @@ describe("tool TX paths via recording client", () => {
       confirm: true,
     });
     assert.equal(isToolError(result), false);
-    assert.equal(client.sent.at(-1)?.address, "/eos/chan/10/dmx");
-    assert.equal(client.sent.at(-1)?.args[0], 128);
+    // Eos ignores /eos/chan/{n}/dmx; the tool converts 0-255 to percent on the CLI.
+    assert.equal(client.sent.at(-1)?.address, "/eos/newcmd");
+    assert.equal(client.sent.at(-1)?.args[0], "Chan 10 @ 50 Enter");
   });
 
   it("submaster_fire sends button edge 1.0/0.0 on /eos/sub/{n}/fire only", async () => {

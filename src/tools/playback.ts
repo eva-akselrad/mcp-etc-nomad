@@ -69,20 +69,11 @@ async function runGoToCue(ctx: EosContext, args: GoToCueRunArgs) {
   const transport = method ?? "cli";
 
   if (transport === "cli") {
-    if (time !== undefined) {
-      if (time === 0 || time === "0") {
-        if (assert !== undefined && assert !== 0) {
-          steps.push(await sendCliStep(ctx, `Assert ${assert}`));
-        } else {
-          await sendButton(ctx, keyPress("assert"));
-          steps.push("/eos/key/assert");
-        }
-      } else {
-        steps.push(await sendCliStep(ctx, `Time ${time}`));
-      }
-    }
-
-    const line = buildGoToCueCommand({ cue, cueList, out, cueZero });
+    // Eos: "Go_To_Cue 9 / 2 Time 0 Enter". A separate Assert key or Time line is wiped
+    // by the next /eos/newcmd (it clears the command line), so the time must be inline.
+    let line = buildGoToCueCommand({ cue, cueList, out, cueZero });
+    if (time !== undefined) line += ` Time ${time}`;
+    if (assert !== undefined && assert !== 0) steps.push("assert ignored on CLI path (use time)");
     steps.push(await sendCliStep(ctx, line));
 
     return jsonResult({

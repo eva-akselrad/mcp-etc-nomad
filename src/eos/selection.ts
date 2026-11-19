@@ -75,6 +75,10 @@ export async function sendChannelSelection(
     throw new Error("Provide channel, channels, ranges, or from/thru for selection.");
   }
 
+  // Start from an empty command line so leftover text can't merge into the selection.
+  await ctx.client.send("/eos/newcmd", "");
+  sent.push("/eos/newcmd (clear)");
+
   for (const item of items) {
     if (item === "thru") {
       await tapKey(ctx, keyPress("thru"));

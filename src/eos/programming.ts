@@ -37,17 +37,25 @@ export interface BuiltProgrammingSteps {
 function formatCueRef(ref: CueTargetRef): string {
   const cue = targetNumber(ref.cue, "cue");
   if (ref.part !== undefined) {
-    const base = ref.cueList !== undefined ? `Cue ${ref.cueList}/${cue}` : `Cue ${cue}`;
+    const base = ref.cueList !== undefined ? `Cue ${ref.cueList} / ${cue}` : `Cue ${cue}`;
     return `${base} Part ${ref.part}`;
   }
   if (ref.cueList !== undefined) {
-    return `Cue ${ref.cueList}/${cue}`;
+    return `Cue ${ref.cueList} / ${cue}`;
   }
   return `Cue ${cue}`;
 }
 
+const TARGET_KEYWORDS: Partial<Record<ProgrammingTarget, string>> = {
+  ip: "Intensity_Palette",
+  fp: "Focus_Palette",
+  cp: "Color_Palette",
+  bp: "Beam_Palette",
+  ms: "Magic_Sheet",
+};
+
 function formatTarget(type: ProgrammingTarget, number?: number | string): string {
-  const label = type === "ms" ? "Magic Sheet" : capitalize(type);
+  const label = TARGET_KEYWORDS[type] ?? capitalize(type);
   if (number === undefined) {
     return label;
   }
@@ -83,7 +91,7 @@ function formatRange(
       ? thruCueList !== undefined && thruCueList !== cueList
         ? formatCueRef({ cueList: thruCueList, cue: thru })
         : targetNumber(thru, "cue")
-      : formatTarget(type, thru);
+      : targetNumber(thru, type);
   return `${start} Thru ${end}`;
 }
 
@@ -123,11 +131,6 @@ export function buildRecordCommand(options: {
     if (options.block) steps[1] += " Block";
     if (options.merge) steps[1] += " Merge";
     if (options.time) steps[1] += ` ${options.time}`;
-    if (options.label) {
-      steps.push(
-        `Label ${formatCueRef({ cueList: options.cueList, cue: options.number, part: options.part })} ${JSON.stringify(options.label)}`
-      );
-    }
     return {
       style: "two_step",
       steps,
@@ -151,16 +154,14 @@ export function buildRecordCommand(options: {
   } else if (options.number === undefined) {
     parts.push(verb);
   } else {
-    parts.push(formatTarget(options.target, options.number), verb);
+    parts.push(verb, formatTarget(options.target, options.number));
   }
 
   if (options.block) parts.push("Block");
   if (options.merge) parts.push("Merge");
   if (options.time) parts.push(options.time);
-  if (options.label && options.target === "cue" && options.number !== undefined) {
-    parts.push(
-      `Label ${formatCueRef({ cueList: options.cueList, cue: options.number, part: options.part })} ${JSON.stringify(options.label)}`
-    );
+  if (options.target === "cue") {
+    // cue labels are applied separately via /eos/set/cue/{list}/{cue}/label
   } else if (options.label && options.number !== undefined) {
     parts.push(`Label ${formatTarget(options.target, options.number)} ${JSON.stringify(options.label)}`);
   }
@@ -202,24 +203,20 @@ export function buildUpdateCommand(options: {
     };
   }
 
-  const parts: string[] = [];
+  // Eos: "Update [Cue_Only/Track] Cue 9 / 2 Enter". Verb first; the Cue Only/Track softkey
+  // goes straight after Update and toggles the console default (Track on a stock desk).
+  // "Cue 9 / 2 Update ..." and a trailing "Cue Only" are syntax errors.
+  const parts: string[] = ["Update"];
+  if (options.scope === "cue_only") parts.push("Cue_Only/Track");
 
   if (options.target === "cue") {
-    if (options.number === undefined) {
-      parts.push("Update");
-    } else {
-      parts.push(
-        formatCueRef({ cueList: options.cueList, cue: options.number, part: options.part }),
-        "Update"
-      );
+    if (options.number !== undefined) {
+      parts.push(formatCueRef({ cueList: options.cueList, cue: options.number, part: options.part }));
     }
-  } else if (options.number === undefined) {
-    parts.push("Update");
-  } else {
-    parts.push(formatTarget(options.target, options.number), "Update");
+  } else if (options.number !== undefined) {
+    parts.push(formatTarget(options.target, options.number));
   }
 
-  if (scopeWord) parts.push(scopeWord);
   if (options.block) parts.push("Block");
   if (options.merge) parts.push("Merge");
   if (options.time) parts.push(options.time);
@@ -238,7 +235,8 @@ export function buildCopyCommand(options: {
   destCueList?: number;
   time?: string;
 }): string {
-  const parts = ["Copy"];
+  // Eos: "Cue 1 Thru 5 Copy_To Cue 10" (Copy To is one key; "Copy" alone is a syntax error).
+  const parts: string[] = [];
 
   if (options.sourceType === "cue") {
     parts.push(formatRange("cue", options.sourceFrom, options.sourceThru, options.sourceCueList));
@@ -246,6 +244,7 @@ export function buildCopyCommand(options: {
     parts.push(formatRange(options.sourceType, options.sourceFrom, options.sourceThru));
   }
 
+  parts.push("Copy_To");
   if (options.destType === "cue") {
     parts.push(formatCueRef({ cueList: options.destCueList, cue: options.dest }));
   } else {
@@ -264,10 +263,10 @@ export function buildCueMoveCommand(options: {
   destCueList?: number;
   time?: string;
 }): string {
+  // Eos: Copy To pressed twice = Move To ("Move ... At" is a syntax error).
   const parts = [
-    "Move",
     formatCueRef({ cueList: options.sourceCueList, cue: options.source }),
-    "At",
+    "Copy_To Copy_To",
     formatCueRef({ cueList: options.destCueList, cue: options.dest }),
   ];
   if (options.time) parts.push(options.time);
@@ -279,7 +278,7 @@ export function buildEffectMoveCommand(options: {
   source: number | string;
   dest: number | string;
 }): string {
-  return `Move Effect ${targetNumber(options.source, "effect")} At Effect ${targetNumber(options.dest, "effect")}`;
+  return `Effect ${targetNumber(options.source, "effect")} Copy_To Copy_To Effect ${targetNumber(options.dest, "effect")}`;
 }
 
 /** Patch copy (not channel live Copy To): "111 Copy To 116". Scope via {Plus Show}/{Only Show} softkeys on desk. */
@@ -287,7 +286,7 @@ export function buildPatchCopyCommand(options: {
   sourceChannel: number;
   destChannel: number;
 }): string {
-  return `${options.sourceChannel} Copy To ${options.destChannel}`;
+  return `${options.sourceChannel} Copy_To ${options.destChannel}`;
 }
 
 /**
@@ -298,7 +297,7 @@ export function buildPatchMoveCommand(options: {
   sourceChannel: number;
   destChannel: number;
 }): string {
-  return `${options.sourceChannel} Copy To Copy To ${options.destChannel}`;
+  return `${options.sourceChannel} Copy_To Copy_To ${options.destChannel}`;
 }
 
 /** @deprecated Use buildCueMoveCommand or buildEffectMoveCommand */
@@ -351,6 +350,9 @@ export function buildDeleteCommand(options: {
     parts.push(formatRange(options.target, options.from, options.thru));
   }
 
+  // Eos asks "Please Confirm" for Delete; the tool already requires confirm_delete,
+  // so send the confirming second Enter too.
+  parts.push("Enter Enter");
   return parts.join(" ");
 }
 
@@ -360,9 +362,9 @@ export function buildUnpatchCommand(options: {
   thru?: number;
 }): string {
   if (options.thru !== undefined) {
-    return `Unpatch ${options.channel} Thru ${options.thru}`;
+    return `${options.channel} Thru ${options.thru} Address 0 Enter Enter`;
   }
-  return `Unpatch ${options.channel}`;
+  return `${options.channel} Address 0 Enter Enter`;
 }
 
 export function buildLabelCommand(options: {
@@ -392,25 +394,23 @@ export function buildGroupFromChannelsCommand(options: {
   label?: string;
   mode?: RecordMode;
 }): string {
-  const selectionParts: string[] = [];
+  const items: string[] = [];
   if (options.useCurrentSelection) {
     // Current programmer selection — no channel prefix.
   } else if (options.channelFrom !== undefined) {
-    selectionParts.push(
+    items.push(
       options.channelThru !== undefined
-        ? `Channel ${options.channelFrom} Thru ${options.channelThru}`
-        : `Channel ${options.channelFrom}`
+        ? `${options.channelFrom} Thru ${options.channelThru}`
+        : `${options.channelFrom}`
     );
   } else {
     for (const range of options.ranges ?? []) {
-      selectionParts.push(`Channel ${range.from} Thru ${range.thru}`);
+      items.push(`${range.from} Thru ${range.thru}`);
     }
-    if (options.channels?.length) {
-      selectionParts.push(
-        options.channels.map((ch, i) => (i === 0 ? `Channel ${ch}` : `${ch}`)).join(" + ")
-      );
+    for (const ch of options.channels ?? []) {
+      items.push(`${ch}`);
     }
-    if (selectionParts.length === 0) {
+    if (items.length === 0) {
       throw new Error(
         "Provide channelFrom/thru, channels/ranges, or useCurrentSelection for record_group."
       );
@@ -418,10 +418,11 @@ export function buildGroupFromChannelsCommand(options: {
   }
 
   const verb = recordVerb(options.mode ?? "record");
-  const parts = [...selectionParts, `Group ${options.group}`, verb];
-  if (options.label) {
-    parts.push(`Label Group ${options.group} ${JSON.stringify(options.label)}`);
-  }
+  const parts: string[] = [];
+  if (items.length) parts.push(`Chan ${items.join(" + ")}`);
+  // "Chan 1 Thru 5 Record Group 9" — Group before Record is read as a selection.
+  // Labels are applied separately via /eos/set/group/{n}/label.
+  parts.push(verb, `Group ${options.group}`);
   return parts.join(" ");
 }
 
@@ -489,19 +490,19 @@ export function buildGoToCueCommand(options: {
   cueZero?: boolean;
 }): string {
   if (options.out) {
-    return "Go To Cue Out";
+    return "Go_To_Cue Out";
   }
   if (options.cueZero) {
-    return "Go To Cue 0";
+    return "Go_To_Cue 0";
   }
   if (options.cue === undefined) {
     throw new Error("Provide cue, out=true, or cueZero=true for Go To Cue.");
   }
   const cueSeg = targetNumber(options.cue, "cue");
   if (options.cueList !== undefined) {
-    return `Go To Cue ${options.cueList}/${cueSeg}`;
+    return `Go_To_Cue ${options.cueList} / ${cueSeg}`;
   }
-  return `Go To Cue ${cueSeg}`;
+  return `Go_To_Cue ${cueSeg}`;
 }
 
 export function buildParkCommand(options: {
@@ -509,23 +510,22 @@ export function buildParkCommand(options: {
   thru?: number;
   level?: number;
 }): string {
-  let base: string;
-  if (options.thru !== undefined && options.thru !== options.channel) {
-    base = `Chan ${options.channel} Thru ${options.thru} Park`;
-  } else {
-    base = `Chan ${options.channel} Park`;
-  }
-  if (options.level !== undefined) {
-    return `${base} At ${options.level}`;
-  }
-  return base;
+  const sel =
+    options.thru !== undefined && options.thru !== options.channel
+      ? `Chan ${options.channel} Thru ${options.thru}`
+      : `Chan ${options.channel}`;
+  // Eos: "Chan 5 @ 50 Park" — a level after Park is dropped.
+  return options.level !== undefined ? `${sel} @ ${options.level} Park` : `${sel} Park`;
 }
 
 export function buildUnparkCommand(options: { channel: number; thru?: number }): string {
-  if (options.thru !== undefined && options.thru !== options.channel) {
-    return `Chan ${options.channel} Thru ${options.thru} Unpark`;
-  }
-  return `Chan ${options.channel} Unpark`;
+  // Eos has no Unpark word; Park on an already-parked channel toggles it off.
+  const sel =
+    options.thru !== undefined && options.thru !== options.channel
+      ? `Chan ${options.channel} Thru ${options.thru}`
+      : `Chan ${options.channel}`;
+  // Eos replies "Unpark, Please Confirm" — include the confirming Enter.
+  return `${sel} Park Enter Enter`;
 }
 
 /** Build park/unpark CLI from shared selection — single channel or one Thru range only. */
@@ -580,8 +580,8 @@ export function buildPatchCommand(options: {
   enterPatchDisplay?: boolean;
 }): string | BuiltProgrammingSteps {
   const patchLine = options.thru !== undefined
-    ? `Patch ${options.channel} Thru ${options.thru}`
-    : `Patch ${options.channel}`;
+    ? `${options.channel} Thru ${options.thru}`
+    : `${options.channel}`;
 
   const detail: string[] = [patchLine];
   if (options.fixtureTypeNumber !== undefined) {
@@ -589,11 +589,13 @@ export function buildPatchCommand(options: {
   } else if (options.fixtureType) {
     detail.push(`Type ${options.fixtureType}`);
   }
+  // Eos has no Universe keyword: address is "U / A" (spaces required over /eos/newcmd).
   if (options.address !== undefined) {
-    detail.push(`Address ${options.address}`);
-  }
-  if (options.universe !== undefined) {
-    detail.push(`Universe ${options.universe}`);
+    detail.push(
+      options.universe !== undefined
+        ? `Address ${options.universe} / ${options.address}`
+        : `Address ${options.address}`
+    );
   }
 
   const line = detail.join(" ");

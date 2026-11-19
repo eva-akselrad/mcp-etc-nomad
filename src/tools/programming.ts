@@ -79,6 +79,8 @@ type SendOptions = {
   cueList?: number;
   /** Metadata labels skip live/confirm gates (Dictionary /eos/set or Label CLI). */
   gateLive?: boolean;
+  /** Runs after the CLI steps are sent, before the cache refresh. */
+  afterSend?: () => Promise<string | undefined>;
 };
 
 /** Programming uses /eos/newcmd — no /eos/record verb. */
@@ -99,6 +101,11 @@ async function sendProgrammingSteps(
     const cmd = buildCommand(step, "enter");
     await ctx.client.send("/eos/newcmd", cmd.text);
     sent.push(cmd.text);
+  }
+
+  if (options.afterSend) {
+    const extra = await options.afterSend();
+    if (extra) sent.push(extra);
   }
 
   let refresh: Awaited<ReturnType<typeof syncShowTargets>> | undefined;
@@ -173,6 +180,13 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         allow_live: args.allow_live,
         refresh_cache: args.refresh_cache,
         cueList: args.cueList,
+        afterSend: args.label
+          ? async () => {
+              const path = setCueLabel(args.cueList ?? 1, args.cue);
+              await ctx.client.send(path, args.label as string);
+              return `${path} ${JSON.stringify(args.label)}`;
+            }
+          : undefined,
       });
     }
   );
@@ -262,6 +276,13 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
         confirm: args.confirm,
         allow_live: args.allow_live,
         refresh_cache: args.refresh_cache,
+        afterSend: args.label
+          ? async () => {
+              const path = setGroupLabel(args.group);
+              await ctx.client.send(path, args.label as string);
+              return `${path} ${JSON.stringify(args.label)}`;
+            }
+          : undefined,
       });
     }
   );
@@ -667,7 +688,8 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
       inputSchema: z.object({
         groups: z.boolean().optional(),
         cueLists: z.boolean().optional(),
-        cues: z.array(z.number().int().positive()).optional(),
+        cues: z.array(z.number().int().positive()).optional().describe("Cue lists whose cues to fetch. Omit for none."),
+        allCues: z.boolean().optional().describe("Fetch cues for every list (slow on big shows)."),
         presets: z.boolean().optional(),
         palettes: z.union([z.boolean(), z.array(paletteTypeSchema)]).optional(),
         patch: z.boolean().optional(),
@@ -676,8 +698,9 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
       }),
       annotations: { readOnlyHint: true },
     },
-    async ({ groups, cueLists, cues, presets, palettes, patch, subscribe, timeoutMs }) => {
+    async ({ groups, cueLists, cues, allCues, presets, palettes, patch, subscribe, timeoutMs }) => {
       const result = await syncShowTargets(ctx.client, ctx.listener, {
+        allCues,
         groups,
         cueLists,
         cues,
@@ -764,16 +787,91 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
   server.registerTool(
     "get_patch",
     {
-      description: "Cached patch channels from sync_show_targets (patch=true) via /eos/get/patch/*.",
-      inputSchema: z.object({}),
+      description:
+        "Cached patch from sync_show_targets (patch=true). Defaults to a summary (fixture types, channel ranges, universes). " +
+        "Use view=list with channelFrom/channelThru, fixtureType, offset/limit (default 100) for rows; include_raw adds raw OSC args.",
+      inputSchema: z.object({
+        view: z.enum(["summary", "list"]).optional(),
+        channelFrom: z.number().int().positive().optional(),
+        channelThru: z.number().int().positive().optional(),
+        fixtureType: z.string().optional().describe("Case-insensitive substring match on fixture type or manufacturer"),
+        offset: z.number().int().min(0).optional(),
+        limit: z.number().int().positive().max(500).optional(),
+        include_raw: z.boolean().optional(),
+      }),
       annotations: { readOnlyHint: true },
     },
-    async () => {
+    async (args) => {
       const state = ctx.listener.getState();
+      const all = Object.values(state.patch).sort((a, b) => a.channel - b.channel || (a.part ?? 1) - (b.part ?? 1));
+      const fmtAddr = (abs?: number) =>
+        abs === undefined || abs <= 0 ? undefined : `${Math.floor((abs - 1) / 512) + 1}/${((abs - 1) % 512) + 1}`;
+      const needle = args.fixtureType?.toLowerCase();
+      const filtered = all.filter(
+        (p) =>
+          (args.channelFrom === undefined || p.channel >= args.channelFrom) &&
+          (args.channelThru === undefined || p.channel <= args.channelThru) &&
+          (!needle ||
+            String(p.fixtureType ?? "").toLowerCase().includes(needle) ||
+            String(p.manufacturer ?? "").toLowerCase().includes(needle))
+      );
+      const lastSyncedAt = state.syncStatus.patchAt ?? state.lastSyncedAt;
+
+      if ((args.view ?? "summary") === "summary") {
+        const byType = new Map<string, number[]>();
+        const universes = new Map<number, number>();
+        for (const p of filtered) {
+          const key = `${p.manufacturer ?? ""} ${p.fixtureType ?? ""}`.trim();
+          (byType.get(key) ?? byType.set(key, []).get(key)!).push(p.channel);
+          if (p.address && p.address > 0) {
+            const u = Math.floor((p.address - 1) / 512) + 1;
+            universes.set(u, (universes.get(u) ?? 0) + 1);
+          }
+        }
+        const ranges = (chs: number[]) => {
+          const sorted = [...new Set(chs)].sort((a, b) => a - b);
+          const out: string[] = [];
+          for (let i = 0; i < sorted.length; i++) {
+            const start = sorted[i];
+            while (i + 1 < sorted.length && sorted[i + 1] === sorted[i] + 1) i++;
+            out.push(start === sorted[i] ? `${start}` : `${start}-${sorted[i]}`);
+          }
+          return out.join(", ");
+        };
+        return jsonResult({
+          view: "summary",
+          count: filtered.length,
+          totalPatched: all.length,
+          fixtureTypes: [...byType.entries()]
+            .map(([type, chs]) => ({ type, count: chs.length, channels: ranges(chs) }))
+            .sort((a, b) => b.count - a.count),
+          universes: [...universes.entries()].sort((a, b) => a[0] - b[0]).map(([universe, fixtures]) => ({ universe, fixtures })),
+          labelled: filtered.filter((p) => p.label).length,
+          lastSyncedAt,
+          hint: "Use view=list with channelFrom/channelThru or fixtureType for per-channel rows.",
+        });
+      }
+
+      const offset = args.offset ?? 0;
+      const limit = args.limit ?? 100;
+      const page = filtered.slice(offset, offset + limit).map((p) => {
+        const { raw, ...rest } = p as typeof p & { raw?: unknown };
+        return {
+          ...rest,
+          dmx: fmtAddr(p.address),
+          endDmx: fmtAddr(p.endAddress),
+          ...(args.include_raw ? { raw } : {}),
+        };
+      });
       return jsonResult({
-        patch: Object.values(state.patch),
-        count: Object.keys(state.patch).length,
-        lastSyncedAt: state.syncStatus.patchAt ?? state.lastSyncedAt,
+        view: "list",
+        count: filtered.length,
+        offset,
+        limit,
+        returned: page.length,
+        nextOffset: offset + page.length < filtered.length ? offset + page.length : undefined,
+        patch: page,
+        lastSyncedAt,
       });
     }
   );

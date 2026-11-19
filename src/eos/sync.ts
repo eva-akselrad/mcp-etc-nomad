@@ -25,7 +25,9 @@ const PALETTE_TYPES: PaletteType[] = ["ip", "fp", "cp", "bp"];
 export interface SyncOptions {
   groups?: boolean;
   cueLists?: boolean;
+  /** Cue lists whose cues to fetch. Omit for none; set allCues to fetch every list (slow on big shows). */
   cues?: number[];
+  allCues?: boolean;
   presets?: boolean;
   palettes?: boolean | PaletteType[];
   patch?: boolean;
@@ -45,6 +47,26 @@ export interface SyncResult {
 }
 
 const DEFAULT_TIMEOUT_MS = 5000;
+
+/** Eos sends group members as numbers or range strings like "2-6"; expand both. */
+export function expandChannelArgs(args: unknown[]): number[] {
+  const out: number[] = [];
+  for (const arg of args) {
+    if (typeof arg === "number") {
+      out.push(arg);
+      continue;
+    }
+    if (typeof arg !== "string") continue;
+    for (const piece of arg.split(",")) {
+      const m = piece.trim().match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+      if (!m) continue;
+      const from = Number(m[1]);
+      const thru = m[2] !== undefined ? Number(m[2]) : from;
+      for (let ch = Math.min(from, thru); ch <= Math.max(from, thru); ch++) out.push(ch);
+    }
+  }
+  return out;
+}
 const INDEX_STEP_MS = 25;
 
 /** Eos may append `/{argCount}` after `/list/0` on multipart /eos/out/get replies. */
@@ -88,8 +110,14 @@ export async function syncShowTargets(
     cueListCount = await syncCueListsFromConsole(client, listener, timeoutMs);
   }
 
+  // Fetching every cue of every list costs ~1 round trip per cue (80s+ on a big show),
+  // so only do it for lists that were asked for, or when allCues is set.
   const listsToSync =
-    syncCues.length > 0 ? syncCues : Object.keys(listener.getState().cueLists).map(Number);
+    syncCues.length > 0
+      ? syncCues
+      : options.allCues
+        ? Object.keys(listener.getState().cueLists).map(Number)
+        : [];
 
   for (const cueList of listsToSync) {
     cueCounts[String(cueList)] = await syncCuesForList(client, listener, cueList, timeoutMs);
@@ -157,9 +185,7 @@ async function syncGroupsFromConsole(
         outGetList0(`group/${groupNumber}/channels`),
         timeoutMs
       );
-      group.channels = channelsMsg.args
-        .slice(2)
-        .flatMap((arg) => (typeof arg === "number" ? [arg] : []));
+      group.channels = expandChannelArgs(channelsMsg.args.slice(2));
       group.raw = [listMsg.args, channelsMsg.args];
     } catch {
       // Channels list may be empty for new groups.
@@ -340,7 +366,7 @@ async function syncPatchFromConsole(
   for (let index = 0; index < count; index++) {
     await client.send(getPatchIndex(index));
     const listMsg = await listener.waitFor(
-      new RegExp(`^/eos/out/get/patch/\\d+/\\d+/list/0$`),
+      new RegExp(`^/eos/out/get/patch/\\d+/\\d+/list/0${LIST_0_SUFFIX}`),
       timeoutMs
     );
     const parts = listMsg.address.split("/");
@@ -358,7 +384,8 @@ async function syncPatchFromConsole(
       intensityAddress: typeof listMsg.args[6] === "number" ? listMsg.args[6] : undefined,
       currentLevel: typeof listMsg.args[7] === "number" ? listMsg.args[7] : undefined,
       gel: listMsg.args[8] !== undefined ? String(listMsg.args[8]) : undefined,
-      endAddress: typeof listMsg.args[19] === "number" ? listMsg.args[19] : undefined,
+      // args[19] is a part/flag field; the end DMX address is args[20].
+      endAddress: typeof listMsg.args[20] === "number" ? listMsg.args[20] : undefined,
       raw: listMsg.args,
     };
     await sleep(INDEX_STEP_MS);
