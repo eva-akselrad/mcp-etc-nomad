@@ -42,3 +42,21 @@ describe("direct OSC labels, key-name check, show title", () => {
     assert.equal(listener.getState().showName, undefined);
   });
 });
+
+describe("patch_channel fixture type by copy", () => {
+  it("copies the type from another channel, then sets the address", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind", config: { requireConfirm: false } });
+    await invokeTool(server, "patch_channel", { channel: 997, copyTypeFrom: 201, universe: 10, address: 1, refresh_cache: false });
+    const cmds = client.sent.filter((m) => m.address === "/eos/newcmd").map((m) => String(m.args[0]));
+    const copy = cmds.indexOf("201 Copy_To 997 Enter");
+    const addr = cmds.indexOf("997 Address 10 / 1 Enter");
+    assert.ok(copy >= 0 && addr > copy, cmds.join(" | "));
+  });
+
+  it("refuses a fixture type name (no command-line form in Eos)", async () => {
+    const { server, client } = createHarness({ consoleMode: "blind", config: { requireConfirm: false } });
+    const result = await invokeTool(server, "patch_channel", { channel: 997, fixtureType: "Source Four" });
+    assert.equal(isToolError(result), true);
+    assert.equal(client.sent.length, 0);
+  });
+});

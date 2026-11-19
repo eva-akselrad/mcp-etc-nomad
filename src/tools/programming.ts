@@ -596,12 +596,21 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
   server.registerTool(
     "patch_channel",
     {
-      description: "Patch via /eos/newcmd. enter_patch_display on Live desk. Pin EOS_VERSION.",
+      description:
+        "Patch a channel's address in the Patch display ('997 Address 10 / 1'). To give it a fixture type, " +
+        "pass copyTypeFrom = an already-patched channel of that type: Eos copies its patch (type included), " +
+        "then the address is set. Fixture types otherwise come only from the on-screen library ({Type}).",
       inputSchema: z.object({
         channel: z.number().int().positive(),
         thru: z.number().int().positive().optional(),
-        fixtureType: z.string().optional(),
-        fixtureTypeNumber: z.number().int().positive().optional(),
+        copyTypeFrom: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Existing channel whose fixture type to copy (verified: 201 Force 2 -> 997)"),
+        fixtureType: z.string().optional().describe("Not supported over OSC — use copyTypeFrom"),
+        fixtureTypeNumber: z.number().int().positive().optional().describe("Not supported over OSC — use copyTypeFrom"),
         address: z.number().int().nonnegative().optional(),
         universe: z.number().int().positive().optional(),
         enter_patch_display: z.boolean().optional(),
@@ -611,16 +620,49 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
       annotations: { destructiveHint: true },
     },
     async (args) => {
+      if (args.fixtureType !== undefined || args.fixtureTypeNumber !== undefined) {
+        return jsonResult(
+          {
+            ok: false,
+            error:
+              "Eos has no command-line form for choosing a fixture type (it is picked from the {Type} library on screen). " +
+              "Pass copyTypeFrom with a channel already patched as that type, or pick the type on the desk.",
+          },
+          true
+        );
+      }
+      if (args.copyTypeFrom !== undefined && args.thru !== undefined) {
+        return jsonResult({ ok: false, error: "copyTypeFrom works on one channel at a time." }, true);
+      }
       const forcePatchDisplay = ensurePatchDisplay(ctx) || args.enter_patch_display;
-      const text = buildPatchCommand({
+      const built = buildPatchCommand({
         channel: args.channel,
         thru: args.thru,
-        fixtureType: args.fixtureType,
-        fixtureTypeNumber: args.fixtureTypeNumber,
         address: args.address,
         universe: args.universe,
         enterPatchDisplay: forcePatchDisplay,
       });
+      let text = built;
+      if (args.copyTypeFrom !== undefined) {
+        // "201 Copy_To 997" copies the patch (fixture type + address); then re-address the copy.
+        const steps = typeof built === "string" ? [built] : [...built.steps];
+        const at = forcePatchDisplay ? 1 : 0;
+        steps.splice(at, 0, `${args.copyTypeFrom} Copy_To ${args.channel}`);
+        if (args.address === undefined) {
+          // Without a new address the copy shares the source's address (double patch).
+          steps.splice(at + 1, 1);
+        }
+        text = {
+          style: "two_step",
+          steps,
+          notes: [
+            `Fixture type copied from channel ${args.copyTypeFrom}.`,
+            ...(args.address === undefined
+              ? ["No address given: the copy shares the source channel's address until you re-address it."]
+              : []),
+          ],
+        };
+      }
       return sendProgrammingSteps(ctx, text, {
         confirm: args.confirm,
         allow_live: args.allow_live,
