@@ -35,10 +35,19 @@ function expandLegacyRange(input: ChannelSelectionInput): ChannelRange[] {
   return ranges;
 }
 
+/** Build "Chan 201 Thru 208 + 210 - 205" from selection items. */
+export function buildChannelSelectionText(items: Array<number | "thru" | "plus" | "minus">): string {
+  const words = items.map((item) =>
+    item === "thru" ? "Thru" : item === "plus" ? "+" : item === "minus" ? "-" : String(item)
+  );
+  return `Chan ${words.join(" ")}`;
+}
+
 /** Send OSC channel selection steps (Thru / + / − via Dictionary keys). */
 export async function sendChannelSelection(
   ctx: EosContext,
-  input: ChannelSelectionInput
+  input: ChannelSelectionInput,
+  options: { enter?: boolean } = {}
 ): Promise<string[]> {
   const sent: string[] = [];
   const items: Array<number | "thru" | "plus" | "minus"> = [];
@@ -75,25 +84,12 @@ export async function sendChannelSelection(
     throw new Error("Provide channel, channels, ranges, or from/thru for selection.");
   }
 
-  for (const item of items) {
-    if (item === "thru") {
-      await tapKey(ctx, keyPress("thru"));
-      sent.push("/eos/key/thru");
-      continue;
-    }
-    if (item === "plus") {
-      await tapKey(ctx, keyPress("+"));
-      sent.push("/eos/key/+");
-      continue;
-    }
-    if (item === "minus") {
-      await tapKey(ctx, keyPress("_-%"));
-      sent.push("/eos/key/_-%");
-      continue;
-    }
-    await ctx.client.send(channelSelect(), item);
-    sent.push(`/eos/chan (${item})`);
-  }
+  // Send the whole selection as one command-line string via /eos/newcmd (which clears the line first).
+  // Sending bare /eos/chan <n> messages proved unreliable: after a terminated command Eos read a
+  // single "/eos/chan 205" as "- Chan 205" (selecting every channel except 205).
+  const text = buildChannelSelectionText(items);
+  await ctx.client.send("/eos/newcmd", options.enter ? `${text} Enter` : text);
+  sent.push(`/eos/newcmd ${options.enter ? `${text} Enter` : text}`);
 
   return sent;
 }

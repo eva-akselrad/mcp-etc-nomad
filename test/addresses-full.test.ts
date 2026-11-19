@@ -140,6 +140,8 @@ describe("addresses.ts — full Dictionary coverage", () => {
     const config = makeTestConfig({ userId: 5 });
     assert.equal(withUserPrefix(config, "/eos/chan/1"), "/eos/user/5/chan/1");
     assert.equal(withUserPrefix(config, "/eos/user"), "/eos/user");
+    assert.equal(withUserPrefix(config, "/eos/get/version"), "/eos/get/version");
+    assert.equal(withUserPrefix(config, "/eos/ping"), "/eos/ping");
     assert.equal(withUserPrefix(makeTestConfig({ userId: -1 }), "/eos/chan/1"), "/eos/chan/1");
   });
 });

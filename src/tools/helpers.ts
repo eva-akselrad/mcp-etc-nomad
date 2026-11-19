@@ -179,7 +179,7 @@ export function gateLoadMerge(ctx: EosContext, options: LoadMergeOptions) {
       {
         ok: false,
         error:
-          "Pass confirm_path=true for load/merge — desk confirms echoed path with second Enter (EOS_REQUIRE_CONFIRM=true).",
+          "Pass confirm_path=true to acknowledge a load/merge (the user then picks the file in the Browser; EOS_REQUIRE_CONFIRM=true).",
       },
       true
     );

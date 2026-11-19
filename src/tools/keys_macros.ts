@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { keyPress, macroFire, macroSelect, softkeyPress, stagingModeKey } from "../eos/addresses.js";
 import type { EosContext } from "../eos/context.js";
-import { describeOscKey, normalizeOscKey, oscKeyCatalog } from "../eos/keys.js";
+import { describeOscKey, isKnownOscKey, normalizeOscKey, oscKeyCatalog, suggestOscKeys } from "../eos/keys.js";
 import { gateLiveWrite, jsonResult, liveWriteFields, sendButton } from "./helpers.js";
 
 export function registerKeyMacroTools(server: McpServer, ctx: EosContext): void {
@@ -14,11 +14,15 @@ export function registerKeyMacroTools(server: McpServer, ctx: EosContext): void 
       inputSchema: z.object({
         key: z.string().describe("OSC key name or alias from the Eos OSC Dictionary"),
         edge: z.enum(["down", "up", "tap"]).optional(),
+        allow_unlisted: z
+          .boolean()
+          .optional()
+          .describe("Send a name that is not in the Eos v3.2 manual's key table (newer consoles may add keys)."),
         ...liveWriteFields,
       }),
       annotations: { destructiveHint: true },
     },
-    async ({ key, edge, confirm, allow_live }) => {
+    async ({ key, edge, allow_unlisted, confirm, allow_live }) => {
       const blocked = gateLiveWrite(ctx, { confirm, allow_live });
       if (blocked) return blocked;
 
@@ -27,6 +31,18 @@ export function registerKeyMacroTools(server: McpServer, ctx: EosContext): void 
         oscName = normalizeOscKey(key);
       } catch (error) {
         return jsonResult({ ok: false, error: error instanceof Error ? error.message : String(error) }, true);
+      }
+      // Eos silently ignores unknown /eos/key names, so catch typos here.
+      if (!allow_unlisted && !isKnownOscKey(oscName)) {
+        return jsonResult(
+          {
+            ok: false,
+            error: `"${key}" is not an Eos key name (Eos v3.2 manual key table). Nothing was sent.`,
+            suggestions: suggestOscKeys(oscName),
+            hint: "Pass allow_unlisted=true to send it anyway.",
+          },
+          true
+        );
       }
 
       const address = keyPress(oscName);

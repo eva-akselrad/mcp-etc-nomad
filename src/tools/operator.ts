@@ -307,9 +307,19 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
       }
 
       const address = keyPress("highlight");
-      const edge = buttonStateToEdge(effectiveState);
-      await sendButton(ctx, address, edge);
-      steps.push(`${address} (${edge})`);
+      // Highlight is a command-line key: it needs Enter. Key down/up alone does nothing,
+      // and "Highlight Enter" on an empty line leaves highlight mode.
+      const edge = "tap" as const;
+      if (effectiveState === "off") {
+        await ctx.client.send("/eos/newcmd", "Highlight Enter");
+        steps.push("/eos/newcmd Highlight Enter");
+      } else {
+        await sendButton(ctx, address, "tap");
+        steps.push(`${address} (tap)`);
+        const enter = keyPress("enter");
+        await sendButton(ctx, enter, "tap");
+        steps.push(enter);
+      }
 
       return jsonResult({
         ok: true,
@@ -447,6 +457,12 @@ export function registerOperatorTools(server: McpServer, ctx: EosContext): void 
       const address = keyPress("sneak");
       await sendButton(ctx, address, edge);
       steps.push(address);
+      if ((edge ?? "tap") === "tap") {
+        // Sneak is a command-line key and needs Enter to execute
+        const enter = keyPress("enter");
+        await sendButton(ctx, enter, "tap");
+        steps.push(enter);
+      }
       return jsonResult({
         ok: true,
         action: "sneak",

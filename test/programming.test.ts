@@ -29,7 +29,7 @@ describe("programming command builders (Eos OSC domain)", () => {
   it("one_shot record: Record Cue before target", () => {
     assert.equal(
       buildRecordCommand({ target: "cue", number: 5, cueList: 1, style: "one_shot" }),
-      "Record Cue 1/5"
+      "Record Cue 1 / 5"
     );
   });
 
@@ -55,11 +55,11 @@ describe("programming command builders (Eos OSC domain)", () => {
         destType: "cue",
         dest: 10,
       }),
-      "Copy Cue 1 Thru 5 Cue 10"
+      "Cue 1 Thru 5 Copy_To Cue 10"
     );
   });
 
-  it("cue delete with part: Delete Cue 1/5 Part 2", () => {
+  it("cue delete with part: Delete Cue 1 / 5 Part 2", () => {
     assert.equal(
       buildDeleteCommand({
         target: "cue",
@@ -67,19 +67,19 @@ describe("programming command builders (Eos OSC domain)", () => {
         cueList: 1,
         part: 2,
       }),
-      "Delete Cue 1/5 Part 2"
+      "Delete Cue 1 / 5 Part 2 Enter Enter"
     );
   });
 
   it("cue delete range on active list: Delete Cue 1 Thru 5", () => {
     assert.equal(
       buildDeleteCommand({ target: "cue", from: 1, thru: 5 }),
-      "Delete Cue 1 Thru 5"
+      "Delete Cue 1 Thru 5 Enter Enter"
     );
   });
 
   it("patch move uses double Copy To", () => {
-    assert.equal(buildPatchMoveCommand({ sourceChannel: 116, destChannel: 120 }), "116 Copy To Copy To 120");
+    assert.equal(buildPatchMoveCommand({ sourceChannel: 116, destChannel: 120 }), "116 Copy_To Copy_To 120");
   });
 });
 
@@ -88,7 +88,7 @@ describe("spec-aligned programming tools", () => {
     const { server, client } = createHarness({ consoleMode: "blind", config: { requireConfirm: false } });
     await invokeTool(server, "record_cue", { cue: 5, cueList: 1, refresh_cache: false });
     assert.equal(client.sent.at(-1)?.address, "/eos/newcmd");
-    assert.match(String(client.sent.at(-1)?.args[0]), /Record Cue 1\/5 Enter$/);
+    assert.match(String(client.sent.at(-1)?.args[0]), /Record Cue 1 \/ 5 Enter$/);
   });
 
   for (const mode of ["live", "unknown"] as const) {

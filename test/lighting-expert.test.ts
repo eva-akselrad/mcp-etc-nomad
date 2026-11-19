@@ -14,10 +14,10 @@ import {
 
 describe("Lighting Expert priority pack", () => {
   it("buildGoToCueCommand uses authoritative CLI forms", () => {
-    assert.equal(buildGoToCueCommand({ cue: 5 }), "Go To Cue 5");
-    assert.equal(buildGoToCueCommand({ cueList: 1, cue: 10 }), "Go To Cue 1/10");
-    assert.equal(buildGoToCueCommand({ out: true }), "Go To Cue Out");
-    assert.equal(buildGoToCueCommand({ cueZero: true }), "Go To Cue 0");
+    assert.equal(buildGoToCueCommand({ cue: 5 }), "Go_To_Cue 5");
+    assert.equal(buildGoToCueCommand({ cueList: 1, cue: 10 }), "Go_To_Cue 1 / 10");
+    assert.equal(buildGoToCueCommand({ out: true }), "Go_To_Cue Out");
+    assert.equal(buildGoToCueCommand({ cueZero: true }), "Go_To_Cue 0");
   });
 
   it("go_to_cue prefers CLI via /eos/newcmd — not fire or go_0", async () => {
@@ -32,7 +32,7 @@ describe("Lighting Expert priority pack", () => {
     const newcmds = client.sent
       .filter((m) => m.address === "/eos/newcmd")
       .map((m) => String(m.args[0]));
-    assert.ok(newcmds.some((c) => c.includes("Go To Cue 1/5")));
+    assert.ok(newcmds.some((c) => c.includes("Go_To_Cue 1 / 5")));
     const addresses = client.sent.map((m) => m.address);
     assert.ok(!addresses.some((a) => a.match(/\/eos\/cue\/.*\/fire$/)));
     assert.ok(!addresses.includes("/eos/key/go_0"));
@@ -58,7 +58,7 @@ describe("Lighting Expert priority pack", () => {
     const newcmds = client.sent
       .filter((m) => m.address === "/eos/newcmd")
       .map((m) => String(m.args[0]));
-    assert.ok(newcmds.some((c) => c.includes("Go To Cue 0")));
+    assert.ok(newcmds.some((c) => c.includes("Go_To_Cue 0")));
   });
 
   it("go_to_cue rejects cueZero with cue (XOR)", async () => {
@@ -81,7 +81,7 @@ describe("Lighting Expert priority pack", () => {
     const newcmds = client.sent
       .filter((m) => m.address === "/eos/newcmd")
       .map((m) => String(m.args[0]));
-    assert.ok(newcmds.some((c) => c.includes("Go To Cue Out")));
+    assert.ok(newcmds.some((c) => c.includes("Go_To_Cue Out")));
   });
 
   it("go_to_cue time=0 slams via assert key before CLI", async () => {
@@ -93,7 +93,7 @@ describe("Lighting Expert priority pack", () => {
       confirm: true,
     });
     const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/assert"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && /Time 0/.test(String(m.args[0]))));
     assert.ok(!addresses.includes("/eos/key/go_to_cue"));
   });
 
@@ -126,7 +126,7 @@ describe("Lighting Expert priority pack", () => {
     assert.equal(body.canonicalAction, "go_to_cue");
     assert.equal(body.time, 0);
     const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/assert"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && /Time 0/.test(String(m.args[0]))));
     assert.ok(!addresses.some((a) => a.match(/\/eos\/cue\/.*\/fire$/)));
   });
 
@@ -151,24 +151,22 @@ describe("Lighting Expert priority pack", () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     await invokeTool(server, "park", { channel: 10, level: 50, confirm: true });
-    assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 Park At 50/);
+    assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 @ 50 Park/);
   });
 
-  it("channel_select Thru range uses thru key", async () => {
+  it("channel_select Thru range sends one CLI selection", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     await invokeTool(server, "channel_select", { from: 1, thru: 10 });
-    const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/thru"));
-    assert.equal(client.sent.filter((m) => m.address === "/eos/chan").length, 2);
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && String(m.args[0]) === "Chan 1 Thru 10"));
+    assert.equal(client.sent.filter((m) => m.address === "/eos/chan").length, 0);
   });
 
-  it("channel_select minus deselects via _-% key", async () => {
+  it("channel_select minus deselects with - on the CLI", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     await invokeTool(server, "channel_select", { channel: 5, minus: [3] });
-    const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/_-%"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && String(m.args[0]) === "Chan 5 - 3"));
   });
 
   it("unpark accepts ranges selection", async () => {
@@ -178,7 +176,7 @@ describe("Lighting Expert priority pack", () => {
       ranges: [{ from: 10, thru: 12 }],
       confirm: true,
     });
-    assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 Thru 12 Unpark/);
+    assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 Thru 12 Park/);
   });
 
   it("home on group uses /eos/group/{n}/home", async () => {
@@ -277,13 +275,12 @@ describe("Lighting Expert priority pack", () => {
       confirm: true,
     });
     const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/+"));
-    assert.ok(addresses.some((a) => a === "/eos/newcmd"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && String(m.args[0]) === "Chan 1 + 2"));
     assert.ok(addresses.includes("/eos/key/sneak"));
-    assert.match(
-      String(client.sent.find((m) => m.address === "/eos/newcmd")?.args[0]),
-      /Time 5/
+    assert.ok(
+      client.sent.some((m) => m.address === "/eos/newcmd" && /Time 5/.test(String(m.args[0])))
     );
+    assert.ok(addresses.includes("/eos/key/enter"));
   });
 
   it("sneak without selection uses current programmer selection", async () => {
@@ -298,8 +295,7 @@ describe("Lighting Expert priority pack", () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     await invokeTool(server, "make_manual", { channel: 10, confirm: true });
-    const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/chan"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && String(m.args[0]) === "Chan 10"));
     assert.match(String(client.sent.at(-1)?.args[0]), /Make Manual/);
   });
 
@@ -314,7 +310,7 @@ describe("Lighting Expert priority pack", () => {
     const body = parseToolJson<{ action: string; canonicalAction: string }>(result);
     assert.equal(body.action, "unpark_channel");
     assert.equal(body.canonicalAction, "unpark");
-    assert.match(String(client.sent.at(-1)?.args[0]), /Unpark/);
+    assert.match(String(client.sent.at(-1)?.args[0]), /Park/);
   });
 
   it("park_channel deprecated alias delegates to park", async () => {
@@ -328,12 +324,11 @@ describe("Lighting Expert priority pack", () => {
     assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 Park/);
   });
 
-  it("channel_select ranges[] uses thru key", async () => {
+  it("channel_select ranges[] sends Thru on the CLI", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     await invokeTool(server, "channel_select", { ranges: [{ from: 5, thru: 8 }] });
-    const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/thru"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && String(m.args[0]) === "Chan 5 Thru 8"));
   });
 
   it("color_set_hs uses Dictionary color path", async () => {
@@ -354,7 +349,7 @@ describe("Lighting Expert priority pack", () => {
 
     await invokeTool(server, "highlight", { channels: [1, 2], confirm: true });
     const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/+"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && String(m.args[0]) === "Chan 1 + 2"));
     assert.ok(addresses.includes("/eos/key/highlight"));
   });
 

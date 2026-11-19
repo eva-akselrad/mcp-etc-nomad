@@ -3,6 +3,7 @@ import type { EosContext } from "../eos/context.js";
 import { registerBankTools } from "./banks.js";
 import { registerColorTools } from "./color.js";
 import { registerCommandTools } from "./command.js";
+import { registerEffectTools } from "./effects.js";
 import { registerFaderTools } from "./faders.js";
 import { registerKeyMacroTools } from "./keys_macros.js";
 import { registerLevelTools } from "./levels.js";
@@ -24,6 +25,7 @@ export function registerTools(server: McpServer, ctx: EosContext): void {
   registerFaderTools(server, ctx);
   registerOperatorTools(server, ctx);
   registerPaletteTools(server, ctx);
+  registerEffectTools(server, ctx);
   registerKeyMacroTools(server, ctx);
   registerBankTools(server, ctx);
   registerProgrammingTools(server, ctx);

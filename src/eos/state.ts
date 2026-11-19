@@ -57,6 +57,29 @@ export interface ShowFileInfo {
   lastEventPath?: string;
 }
 
+export interface ActiveWheelState {
+  index: number;
+  label: string;
+  name: string;
+  /** 0=Null, 1=Intensity, 2=Focus, 3=Color, 4=Image, 5=Form, 6=Shutter */
+  category?: number;
+  value?: number;
+  raw: unknown[];
+  updatedAt: string;
+}
+
+export type ExtraTargetType = "macro" | "sub" | "fx" | "snap" | "ms";
+
+export interface ExtraTargetState {
+  type: ExtraTargetType;
+  number: number;
+  uid?: string;
+  label?: string;
+  /** Type-specific fields from the Eos OSC get reply (e.g. macro text, sub mode, effect type). */
+  details: Record<string, unknown>;
+  raw: unknown[];
+}
+
 export interface EosState {
   connected: boolean;
   lastMessageAt?: string;
@@ -65,12 +88,18 @@ export interface EosState {
   oscUserId?: number;
   commandLine?: string;
   showPath?: string;
+  /** Show title from /eos/out/show/name. */
+  showName?: string;
   session?: SessionInfo;
   showFile?: ShowFileInfo;
   consoleGet?: ConsoleGetCache;
   activeCue: ActiveCueState;
   activeChannels?: string;
   activeChannelLevels: ActiveChannelLevel[];
+  /** /eos/out/active/wheel/<n> — parameters of the first selected channel (name, category, value). */
+  activeWheels: Record<string, ActiveWheelState>;
+  /** Last /eos/out/event/cue/<list>/<cue>/fire|stop. */
+  lastCueEvent?: { cueList: number; cue: string; event: string; at: string };
   pendingCue: PendingCueState;
   pendingCues: Record<string, unknown>;
   pendingByCueList: Record<string, PendingCueState[]>;
@@ -87,6 +116,8 @@ export interface EosState {
   cues: Record<string, CueState>;
   presets: Record<string, PresetState>;
   palettes: Record<string, PaletteState>;
+  /** Macros, subs, effects, snapshots, magic sheets keyed by type then number. */
+  extraTargets: Partial<Record<ExtraTargetType, Record<string, ExtraTargetState>>>;
   syncStatus: SyncStatus;
 }
 
@@ -99,6 +130,7 @@ export function createInitialState(): EosState {
     consoleGet: {},
     activeCue: {},
     activeChannelLevels: [],
+    activeWheels: {},
     pendingCue: { raw: {} },
     pendingCues: {},
     pendingByCueList: {},
@@ -115,6 +147,7 @@ export function createInitialState(): EosState {
     cues: {},
     presets: {},
     palettes: {},
+    extraTargets: {},
     syncStatus: { cuesAt: {}, palettesAt: {} },
   };
 }

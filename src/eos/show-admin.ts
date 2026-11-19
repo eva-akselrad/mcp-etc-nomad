@@ -87,8 +87,10 @@ export function buildSaveShowWorkflow(options: {
 }
 
 /** Open Browser load wizard — user selects show file manually. */
-export function buildLoadShowWorkflow(options?: { confirmPath?: boolean }): ShowWorkflowSteps {
-  const steps = options?.confirmPath ? [""] : [];
+export function buildLoadShowWorkflow(_options?: { confirmPath?: boolean }): ShowWorkflowSteps {
+  // No CLI steps: the user picks the file in the Browser. A blind Enter here would run
+  // whatever is on the command line (verified on ETCnomad 3.3.9).
+  const steps: string[] = [];
   return {
     style: "two_step",
     needsManual: true,
@@ -106,11 +108,10 @@ export function buildLoadShowWorkflow(options?: { confirmPath?: boolean }): Show
 }
 
 /** Open Browser merge wizard — partial merge needs {Advanced} in CIA. */
-export function buildMergeShowWorkflow(options?: { confirmPath?: boolean }): ShowWorkflowSteps {
-  const steps = ["Merge"];
-  if (options?.confirmPath) {
-    steps.push("");
-  }
+export function buildMergeShowWorkflow(_options?: { confirmPath?: boolean }): ShowWorkflowSteps {
+  // "Merge" is not a command-line word and a blind Enter can run leftover text;
+  // the user runs Browser > File > Merge and picks the parts to merge.
+  const steps: string[] = [];
   return {
     style: "two_step",
     needsManual: true,

@@ -17,8 +17,27 @@ export class EosClient {
     }
   }
 
+  /** OSC user last announced with /eos/user (undefined = never). */
+  private announcedUser?: number;
+
   async send(address: string, ...args: unknown[]): Promise<void> {
-    const resolved = withUserPrefix(this.config, address);
+    // Keep Eos's "current OSC user" in step with config.userId, so /eos/out/cmd and
+    // /eos/out/event/state report this client's own command line and Live/Blind mode
+    // (verified on ETCnomad 3.3.9: user 5 had its own line, selection and mode).
+    if (address !== "/eos/user" && this.config.userId !== this.announcedUser) {
+      const target = this.config.userId;
+      if (!(target < 0 && this.announcedUser === undefined)) {
+        await this.rawSend("/eos/user", target);
+      }
+      this.announcedUser = target;
+    }
+    if (address === "/eos/user" && typeof args[0] === "number") {
+      this.announcedUser = args[0];
+    }
+    await this.rawSend(withUserPrefix(this.config, address), ...args);
+  }
+
+  private async rawSend(resolved: string, ...args: unknown[]): Promise<void> {
     if (this.config.protocol === "tcp") {
       if (!this.tcpLink) {
         throw new Error("TCP protocol requires a shared EosTcpLink instance.");

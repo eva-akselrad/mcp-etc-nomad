@@ -23,25 +23,25 @@ describe("programming CLI builders — extended coverage", () => {
   it("record group and preset one_shot", () => {
     assert.equal(
       buildRecordCommand({ target: "group", number: 3, style: "one_shot" }),
-      "Group 3 Record"
+      "Record Group 3"
     );
     assert.equal(
       buildRecordCommand({ target: "preset", number: 12, style: "one_shot" }),
-      "Preset 12 Record"
+      "Record Preset 12"
     );
   });
 
   it("update cue with scope suffix", () => {
     assert.equal(
       buildUpdateCommand({ target: "cue", number: 5, cueList: 1, scope: "cue_only" }),
-      "Cue 1/5 Update Cue Only"
+      "Update Cue_Only/Track Cue 1 / 5"
     );
   });
 
   it("move and copy across target types", () => {
     assert.equal(
       buildCueMoveCommand({ source: 5, dest: 10, sourceCueList: 1, destCueList: 1 }),
-      "Move Cue 1/5 At Cue 1/10"
+      "Cue 1 / 5 Copy_To Copy_To Cue 1 / 10"
     );
     assert.equal(
       buildCopyCommand({
@@ -50,27 +50,27 @@ describe("programming CLI builders — extended coverage", () => {
         destType: "preset",
         dest: 2,
       }),
-      "Copy Preset 1 Preset 2"
+      "Preset 1 Copy_To Preset 2"
     );
   });
 
   it("patch, unpatch, label, group from channels", () => {
-    assert.equal(buildPatchCommand({ channel: 101 }), "Patch 101");
-    assert.equal(buildUnpatchCommand({ channel: 50 }), "Unpatch 50");
+    assert.equal(buildPatchCommand({ channel: 101 }), "101");
+    assert.equal(buildUnpatchCommand({ channel: 50 }), "50 Address 0 Enter Enter");
     assert.equal(
       buildLabelCommand({ target: "group", number: 1, label: "Warm Wash" }),
-      'Label Group 1 "Warm Wash"'
+      "Group 1 Label Warm Wash"
     );
     assert.equal(
       buildGroupFromChannelsCommand({ group: 1, channelFrom: 1, channelThru: 3 }),
-      "Channel 1 Thru 3 Group 1 Record"
+      "Chan 1 Thru 3 Record Group 1"
     );
   });
 
   it("delete group range", () => {
     assert.equal(
       buildDeleteCommand({ target: "group", from: 1, thru: 3 }),
-      "Delete Group 1 Thru Group 3"
+      "Delete Group 1 Thru 3 Enter Enter"
     );
   });
 });
