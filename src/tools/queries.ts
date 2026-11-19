@@ -156,7 +156,7 @@ export function registerQueryTools(server: McpServer, ctx: EosContext): void {
     },
     async ({ channel, timeoutMs }) => {
       const t0 = Date.now();
-      await sendChannelSelection(ctx, { channel });
+      await sendChannelSelection(ctx, { channel }, { enter: true });
       try {
         await ctx.listener.waitFor(/^\/eos\/out\/active\/wheel\/\d+$/, timeoutMs ?? 3000);
       } catch {
@@ -225,6 +225,52 @@ export function registerQueryTools(server: McpServer, ctx: EosContext): void {
           true
         );
       }
+    }
+  );
+  server.registerTool(
+    "get_fixture_3d",
+    {
+      description:
+        "Read Augment3d position (x, y, z) and orientation for patched channels via " +
+        "/eos/get/patch/<ch>/<part>/augment3d/position. Read-only. XYZ focus needs these positions set.",
+      inputSchema: z.object({
+        channels: z.array(z.number().int().positive()).min(1).max(50),
+        part: z.number().int().positive().optional(),
+        timeoutMs: z.number().int().positive().max(10000).optional(),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ channels, part, timeoutMs }) => {
+      const p = part ?? 1;
+      const results: Array<Record<string, unknown>> = [];
+      for (const ch of channels) {
+        await ctx.client.send(`/eos/get/patch/${ch}/${p}/augment3d/position`);
+        try {
+          const msg = await ctx.listener.waitFor(
+            new RegExp(`^/eos/out/get/patch/${ch}/${p}/augment3d/position(?:/list/\\d+/\\d+)?$`),
+            timeoutMs ?? 2000
+          );
+          const n = (i: number) => (typeof msg.args[i] === "number" ? (msg.args[i] as number) : undefined);
+          const position = [n(2), n(3), n(4)];
+          const orientation = [n(5), n(6), n(7)];
+          results.push({
+            channel: ch,
+            part: p,
+            position,
+            orientation,
+            fpeSet: msg.args[8],
+            placed: position.some((v) => v !== undefined && v !== 0),
+            raw: msg.args,
+          });
+        } catch {
+          results.push({ channel: ch, part: p, error: "No reply (not patched, or no Augment3d data)." });
+        }
+      }
+      return jsonResult({
+        ok: true,
+        channels: results,
+        summary: `${results.filter((r) => r.placed).length} of ${results.length} channels have a non-zero 3D position.`,
+      });
     }
   );
 }

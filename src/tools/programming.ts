@@ -526,6 +526,75 @@ export function registerProgrammingTools(server: McpServer, ctx: EosContext): vo
   );
 
   server.registerTool(
+    "set_fixture_3d",
+    {
+      description:
+        "Set Augment3d position (metres) and orientation (degrees; 0/0/0 = pointing straight down) for one or more " +
+        "channels via the Patch-display command line (Chan N Position x / y / z; Chan N Orientation x / y / z). Reads each one back to verify. " +
+        "Patch data only (no output change), but it edits the show, so EOS_REQUIRE_CONFIRM applies.",
+      inputSchema: z.object({
+        fixtures: z
+          .array(
+            z.object({
+              channel: z.number().int().positive(),
+              part: z.number().int().positive().optional(),
+              position: z.tuple([z.number(), z.number(), z.number()]),
+              orientation: z.tuple([z.number(), z.number(), z.number()]).optional(),
+            })
+          )
+          .min(1)
+          .max(200),
+        ...liveWriteFields,
+      }),
+      annotations: { destructiveHint: true },
+    },
+    async ({ fixtures, confirm, allow_live }) => {
+      void allow_live;
+      if (ctx.config.requireConfirm && !confirm) {
+        return jsonResult({ ok: false, error: "Pass confirm=true to execute this action (EOS_REQUIRE_CONFIRM=true)." }, true);
+      }
+      const fmt = (v: number) => String(Math.round(v * 1000) / 1000);
+      const results: Array<Record<string, unknown>> = [];
+      for (const f of fixtures) {
+        const part = f.part ?? 1;
+        const ori = f.orientation ?? [0, 0, 0];
+        // The OSC /eos/set/.../augment3d/position setter is accepted but not stored (Eos 3.2, verified);
+        // the Patch-display command line works: "Chan N Position x / y / z" [+ "Chan N Orientation ...].
+        const value = [...f.position, ...ori].map(fmt).join(",");
+        const chanRef = part > 1 ? `Chan ${f.channel} Part ${part}` : `Chan ${f.channel}`;
+        await ctx.client.send("/eos/newcmd", "Patch Enter");
+        await ctx.client.send("/eos/newcmd", `${chanRef} Position ${f.position.map(fmt).join(" / ")} Enter`);
+        if (f.orientation) {
+          await ctx.client.send("/eos/newcmd", `${chanRef} Orientation ${ori.map(fmt).join(" / ")} Enter`);
+        }
+        await new Promise((res) => setTimeout(res, 150));
+        let readback: unknown = undefined;
+        let match = false;
+        try {
+          await ctx.client.send(`/eos/get/patch/${f.channel}/${part}/augment3d/position`);
+          const msg = await ctx.listener.waitFor(
+            new RegExp(`^/eos/out/get/patch/${f.channel}/${part}/augment3d/position(?:/list/\\d+/\\d+)?$`),
+            2000
+          );
+          const got = msg.args.slice(2, 8).map((a) => (typeof a === "number" ? a : NaN));
+          readback = got;
+          const want = [...f.position, ...ori];
+          match = got.every((g, i) => Math.abs(g - want[i]) < 0.01);
+        } catch {
+          readback = "no reply";
+        }
+        results.push({ channel: f.channel, part, sent: value, readback, match });
+      }
+      return jsonResult({
+        ok: results.every((r) => r.match),
+        action: "set_fixture_3d",
+        results,
+        summary: `${results.filter((r) => r.match).length} of ${results.length} verified.`,
+      });
+    }
+  );
+
+  server.registerTool(
     "patch_set_info",
     {
       description:

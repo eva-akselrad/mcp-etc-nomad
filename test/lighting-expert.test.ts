@@ -154,21 +154,19 @@ describe("Lighting Expert priority pack", () => {
     assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 @ 50 Park/);
   });
 
-  it("channel_select Thru range uses thru key", async () => {
+  it("channel_select Thru range sends one CLI selection", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     await invokeTool(server, "channel_select", { from: 1, thru: 10 });
-    const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/thru"));
-    assert.equal(client.sent.filter((m) => m.address === "/eos/chan").length, 2);
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && String(m.args[0]) === "Chan 1 Thru 10"));
+    assert.equal(client.sent.filter((m) => m.address === "/eos/chan").length, 0);
   });
 
-  it("channel_select minus deselects via _-% key", async () => {
+  it("channel_select minus deselects with - on the CLI", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     await invokeTool(server, "channel_select", { channel: 5, minus: [3] });
-    const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/_-%"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && String(m.args[0]) === "Chan 5 - 3"));
   });
 
   it("unpark accepts ranges selection", async () => {
@@ -277,10 +275,8 @@ describe("Lighting Expert priority pack", () => {
       confirm: true,
     });
     const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/+"));
-    assert.ok(addresses.some((a) => a === "/eos/newcmd"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && String(m.args[0]) === "Chan 1 + 2"));
     assert.ok(addresses.includes("/eos/key/sneak"));
-    // The first /eos/newcmd is the empty line-clear sent before channel selection.
     assert.ok(
       client.sent.some((m) => m.address === "/eos/newcmd" && /Time 5/.test(String(m.args[0])))
     );
@@ -299,8 +295,7 @@ describe("Lighting Expert priority pack", () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     await invokeTool(server, "make_manual", { channel: 10, confirm: true });
-    const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/chan"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && String(m.args[0]) === "Chan 10"));
     assert.match(String(client.sent.at(-1)?.args[0]), /Make Manual/);
   });
 
@@ -329,12 +324,11 @@ describe("Lighting Expert priority pack", () => {
     assert.match(String(client.sent.at(-1)?.args[0]), /Chan 10 Park/);
   });
 
-  it("channel_select ranges[] uses thru key", async () => {
+  it("channel_select ranges[] sends Thru on the CLI", async () => {
     const { server, client } = createHarness({ consoleMode: "blind" });
 
     await invokeTool(server, "channel_select", { ranges: [{ from: 5, thru: 8 }] });
-    const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/thru"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && String(m.args[0]) === "Chan 5 Thru 8"));
   });
 
   it("color_set_hs uses Dictionary color path", async () => {
@@ -355,7 +349,7 @@ describe("Lighting Expert priority pack", () => {
 
     await invokeTool(server, "highlight", { channels: [1, 2], confirm: true });
     const addresses = client.sent.map((m) => m.address);
-    assert.ok(addresses.includes("/eos/key/+"));
+    assert.ok(client.sent.some((m) => m.address === "/eos/newcmd" && String(m.args[0]) === "Chan 1 + 2"));
     assert.ok(addresses.includes("/eos/key/highlight"));
   });
 

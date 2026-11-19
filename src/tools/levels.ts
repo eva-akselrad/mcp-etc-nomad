@@ -164,4 +164,40 @@ export function registerLevelTools(server: McpServer, ctx: EosContext): void {
       return jsonResult({ ok: true, action: "at_set_level", level });
     }
   );
+  server.registerTool(
+    "set_xyz_focus",
+    {
+      description:
+        "Aim channels at an XYZ point (decimal metres, Augment3d coordinates) via /eos/chan/<n>/xyz. " +
+        "Needs each fixture's Augment3d position set (see set_fixture_3d). Optional intensity sets the level first. Live output change.",
+      inputSchema: z.object({
+        channels: z.array(z.number().int().positive()).min(1).max(100),
+        x: z.number(),
+        y: z.number(),
+        z: z.number(),
+        intensity: z.number().min(0).max(100).optional(),
+        ...liveWriteFields,
+      }),
+      annotations: { destructiveHint: true },
+    },
+    async ({ channels, x, y, z: zz, intensity, confirm, allow_live }) => {
+      const blocked = gateLiveWrite(ctx, { confirm, allow_live });
+      if (blocked) return blocked;
+      const sent: string[] = [];
+      if (ctx.listener.getState().consoleMode !== "live") {
+        await ctx.client.send("/eos/newcmd", "Live Enter");
+        sent.push("/eos/newcmd Live Enter");
+      }
+      for (const ch of channels) {
+        await ctx.client.send(`/eos/chan/${ch}/xyz`, x, y, zz);
+        sent.push(`/eos/chan/${ch}/xyz ${x} ${y} ${zz}`);
+      }
+      if (intensity !== undefined) {
+        const line = `Chan ${channels.join(" + ")} @ ${intensity} Enter`;
+        await ctx.client.send("/eos/newcmd", line);
+        sent.push(`/eos/newcmd ${line}`);
+      }
+      return jsonResult({ ok: true, action: "set_xyz_focus", target: [x, y, zz], sent });
+    }
+  );
 }
